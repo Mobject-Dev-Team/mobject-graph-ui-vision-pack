@@ -1,0 +1,46 @@
+{
+  "name": "mobject-graph-ui-vision-pack",
+  "version": "0.1.0",
+  "description": "TwinCAT Vision pack for mobject-graph-ui",
+  "type": "module",
+  "main": "dist/mobject-graph-ui-vision-pack.bundle.cjs.js",
+  "module": "dist/mobject-graph-ui-vision-pack.bundle.esm.js",
+  "browser": "dist/mobject-graph-ui-vision-pack.bundle.js",
+  "exports": {
+    ".": {
+      "import": "./dist/mobject-graph-ui-vision-pack.bundle.esm.min.js",
+      "require": "./dist/mobject-graph-ui-vision-pack.bundle.cjs.min.js",
+      "default": "./dist/mobject-graph-ui-vision-pack.bundle.min.js"
+    },
+    "./full": {
+      "import": "./dist/mobject-graph-ui-vision-pack.bundle.esm.js",
+      "require": "./dist/mobject-graph-ui-vision-pack.bundle.cjs.js",
+      "default": "./dist/mobject-graph-ui-vision-pack.bundle.js"
+    }
+  },
+  "scripts": {
+    "build": "rollup -c"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mobject-Dev-Team/mobject-graph-ui-vision-pack"
+  },
+  "author": "benhar-dev",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@rollup/plugin-babel": "^6.0.4",
+    "@rollup/plugin-node-resolve": "^15.3.0",
+    "rollup": "^2.79.2",
+    "rollup-plugin-css-only": "^4.5.2",
+    "rollup-plugin-license": "^3.5.3",
+    "rollup-plugin-terser": "^7.0.2"
+  },
+  "peerDependencies": {
+    "mobject-graph-ui": "^0.1.2"
+  }
+}
