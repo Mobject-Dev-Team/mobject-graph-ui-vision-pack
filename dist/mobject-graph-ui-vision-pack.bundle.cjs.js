@@ -643,12 +643,13 @@ var VisionPack = /*#__PURE__*/function () {
   function VisionPack() {
     _classCallCheck(this, VisionPack);
   }
-  return _createClass(VisionPack, null, [{
+  return _createClass(VisionPack, [{
     key: "install",
     value: function install() {
       var graphFramework = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : new mobjectGraphUi.GraphFramework();
-      this.registerWidgets(graphFramework);
-      this.registerFileAssociation(graphFramework);
+      var options = arguments.length > 1 ? arguments[1] : undefined;
+      this.registerWidgets(graphFramework, options);
+      this.registerFileAssociation(graphFramework, options);
     }
   }, {
     key: "registerWidgets",
