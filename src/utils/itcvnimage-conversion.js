@@ -25,7 +25,10 @@
 */
 
 export function loadITcVnImageToImg(img, itcvnimage) {
-  if (!itcvnimage) return;
+  if (!itcvnimage) {
+    setNoImagePlaceholder(img);
+    return;
+  }
   const {
     imageInfo: { nWidth, nHeight, stPixelFormat },
     imageData,
@@ -116,6 +119,29 @@ function drawImageOnCanvas(imgElement, imageDataBytes, width, height) {
     height
   );
   ctx.putImageData(imageData, 0, 0);
+
+  imgElement.src = canvas.toDataURL("image/png");
+}
+
+export function setNoImagePlaceholder(
+  imgElement,
+  width = 105,
+  height = 71,
+  placeholderText = "no image"
+) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#444";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "#222";
+  ctx.font = "16px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(placeholderText, canvas.width / 2, canvas.height / 2);
 
   imgElement.src = canvas.toDataURL("image/png");
 }

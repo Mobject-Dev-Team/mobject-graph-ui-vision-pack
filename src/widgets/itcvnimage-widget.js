@@ -1,12 +1,16 @@
 import { DisplayWidget, ControlWidget } from "mobject-graph-ui";
 import { deepEqual } from "../utils/deep-equal.js";
-import { loadITcVnImageToImg } from "../utils/itcvnimage-conversion.js";
+import {
+  setNoImagePlaceholder,
+  loadITcVnImageToImg,
+} from "../utils/itcvnimage-conversion.js";
 import { bytesToBase64 } from "../utils/base64.js";
 
 export class ITcVnImageDisplayWidget extends DisplayWidget {
   constructor(name, parent, options) {
     super(name, parent, options);
     this.image = new Image();
+    setNoImagePlaceholder(this.image);
     this.previousValue = null;
   }
 

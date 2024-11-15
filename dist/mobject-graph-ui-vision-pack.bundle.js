@@ -233,7 +233,10 @@
   */
 
   function loadITcVnImageToImg(img, itcvnimage) {
-    if (!itcvnimage) return;
+    if (!itcvnimage) {
+      setNoImagePlaceholder(img);
+      return;
+    }
     var _itcvnimage$imageInfo = itcvnimage.imageInfo,
       nWidth = _itcvnimage$imageInfo.nWidth,
       nHeight = _itcvnimage$imageInfo.nHeight,
@@ -312,6 +315,23 @@
     ctx.putImageData(imageData, 0, 0);
     imgElement.src = canvas.toDataURL("image/png");
   }
+  function setNoImagePlaceholder(imgElement) {
+    var width = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 105;
+    var height = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 71;
+    var placeholderText = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : "no image";
+    var canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    var ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#444";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#222";
+    ctx.font = "16px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(placeholderText, canvas.width / 2, canvas.height / 2);
+    imgElement.src = canvas.toDataURL("image/png");
+  }
 
   /*
   MIT License
@@ -366,6 +386,7 @@
       _classCallCheck(this, ITcVnImageDisplayWidget);
       _this = _callSuper(this, ITcVnImageDisplayWidget, [name, parent, options]);
       _this.image = new Image();
+      setNoImagePlaceholder(_this.image);
       _this.previousValue = null;
       return _this;
     }
