@@ -1,4 +1,6 @@
-/* Example of data
+import { bytesToBase64 } from "./base64.js";
+
+/* Example of itcvnimage
 ---------------------------
 {
     imageInfo: {
@@ -24,9 +26,8 @@
 };
 */
 
-export function loadITcVnImageToImg(img, itcvnimage) {
+export function loadITcVnImageToImage(itcvnimage, image) {
   if (!itcvnimage) {
-    setNoImagePlaceholder(img);
     return;
   }
   const {
@@ -41,7 +42,7 @@ export function loadITcVnImageToImg(img, itcvnimage) {
   const { nChannels, nElementSize } = stPixelFormat;
 
   // Process the binary data based on channel information
-  const processedBytes = processImageData(
+  const pixelArray = convertBinaryDataToPixelArray(
     binaryData,
     nWidth,
     nHeight,
@@ -50,7 +51,7 @@ export function loadITcVnImageToImg(img, itcvnimage) {
   );
 
   // Create and draw the image on the canvas
-  drawImageOnCanvas(img, processedBytes, nWidth, nHeight);
+  setImageUsingPixelArray(image, pixelArray, nWidth, nHeight);
 }
 
 function decodeBase64ToBinary(base64String) {
@@ -60,7 +61,13 @@ function decodeBase64ToBinary(base64String) {
   );
 }
 
-function processImageData(binaryData, width, height, channels, bitDepth) {
+function convertBinaryDataToPixelArray(
+  binaryData,
+  width,
+  height,
+  channels,
+  bitDepth
+) {
   const bytesPerPixel = (channels * bitDepth) / 8;
   const outputBytes = new Uint8Array(width * height * 4);
   let j = 0;
@@ -69,7 +76,7 @@ function processImageData(binaryData, width, height, channels, bitDepth) {
     let r,
       g,
       b,
-      a = 255; // Default alpha value
+      a = 255;
 
     if (bitDepth === 8) {
       if (channels === 1) {
@@ -86,7 +93,7 @@ function processImageData(binaryData, width, height, channels, bitDepth) {
       }
     } else if (bitDepth === 16) {
       if (channels === 1) {
-        r = g = b = (binaryData[i] + binaryData[i + 1] * 256) >> 8; // Assume little endian
+        r = g = b = (binaryData[i] + binaryData[i + 1] * 256) >> 8;
       } else if (channels === 3) {
         r = (binaryData[i] + binaryData[i + 1] * 256) >> 8;
         g = (binaryData[i + 2] + binaryData[i + 3] * 256) >> 8;
@@ -99,7 +106,6 @@ function processImageData(binaryData, width, height, channels, bitDepth) {
       }
     }
 
-    // Set the RGBA values in the output buffer
     outputBytes.set([r, g, b, a], j);
     j += 4;
   }
@@ -107,41 +113,60 @@ function processImageData(binaryData, width, height, channels, bitDepth) {
   return outputBytes;
 }
 
-function drawImageOnCanvas(imgElement, imageDataBytes, width, height) {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+function setImageUsingPixelArray(
+  image,
+  imagePixelArray,
+  imageWidth,
+  imageHeight
+) {
+  const canvas = createCanvas(imageWidth, imageHeight);
   const ctx = canvas.getContext("2d");
 
   const imageData = new ImageData(
-    new Uint8ClampedArray(imageDataBytes),
-    width,
-    height
+    new Uint8ClampedArray(imagePixelArray),
+    imageWidth,
+    imageHeight
   );
   ctx.putImageData(imageData, 0, 0);
 
-  imgElement.src = canvas.toDataURL("image/png");
+  image.src = canvas.toDataURL("image/png");
 }
 
-export function setNoImagePlaceholder(
-  imgElement,
-  width = 105,
-  height = 71,
-  placeholderText = "no image"
-) {
+function createCanvas(width, height) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
+  return canvas;
+}
+
+export function convertImageToITcVnImage(image) {
+  const canvas = new OffscreenCanvas(image.width, image.height);
   const ctx = canvas.getContext("2d");
+  ctx.drawImage(image, 0, 0, image.width, image.height);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = "#444";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const itcvnimage = {
+    imageInfo: {
+      nImageSize: imageData.data.length,
+      nWidth: canvas.width,
+      nHeight: canvas.height,
+      nXPadding: 0,
+      nYPadding: 0,
+      stPixelFormat: {
+        bSupported: true,
+        bSigned: false,
+        bPlanar: false,
+        bFloat: false,
+        nChannels: 4,
+        ePixelEncoding: "TCVN_PE_NONE",
+        ePixelPackMode: "TCVN_PPM_NONE",
+        nElementSize: 8,
+        nTotalSize: 24,
+      },
+    },
+    imageData: bytesToBase64(imageData.data),
+  };
 
-  ctx.fillStyle = "#222";
-  ctx.font = "16px Arial";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(placeholderText, canvas.width / 2, canvas.height / 2);
-
-  imgElement.src = canvas.toDataURL("image/png");
+  // console.log("Serialized Image Data:", image);
+  return itcvnimage;
 }

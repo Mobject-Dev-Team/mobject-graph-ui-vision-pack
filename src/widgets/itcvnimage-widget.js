@@ -1,23 +1,21 @@
 import { DisplayWidget, ControlWidget } from "mobject-graph-ui";
-import { deepEqual } from "../utils/deep-equal.js";
 import {
-  setNoImagePlaceholder,
-  loadITcVnImageToImg,
+  loadITcVnImageToImage,
+  convertImageToITcVnImage,
 } from "../utils/itcvnimage-conversion.js";
-import { bytesToBase64 } from "../utils/base64.js";
 
 export class ITcVnImageDisplayWidget extends DisplayWidget {
   constructor(name, parent, options) {
     super(name, parent, options);
     this.image = new Image();
-    setNoImagePlaceholder(this.image);
-    this.previousValue = null;
-  }
 
-  onContentUpdate(value) {
-    if (deepEqual(value, this.previousValue)) return;
-    loadITcVnImageToImg(this.image, value);
-    this.previousValue = value;
+    this.on("valueChanged", (newValue, oldValue) => {
+      if (newValue) {
+        loadITcVnImageToImage(newValue, this.image);
+      } else {
+        this.image = new Image();
+      }
+    });
   }
 
   computeSize() {
@@ -25,17 +23,17 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
   }
 
   draw(ctx, node, widget_width, y, H) {
-    this.margin = 5;
-    let drawWidth = widget_width - this.margin * 2 + 1;
-    let drawHeight = node.size[1] - this.margin - y;
+    const margin = 5;
+    const drawWidth = widget_width - margin * 2 + 1;
+    const drawHeight = node.size[1] - margin - y;
 
     // draw the background
     ctx.fillStyle = "#303030";
-    ctx.fillRect(this.margin, y, drawWidth, drawHeight);
+    ctx.fillRect(margin, y, drawWidth, drawHeight);
 
     // create a rectangular clipping path
     ctx.beginPath();
-    ctx.rect(this.margin, y, drawWidth, drawHeight);
+    ctx.rect(margin, y, drawWidth, drawHeight);
     ctx.clip();
 
     // draw the checkerboard pattern
@@ -48,7 +46,7 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
     for (var i = 0; i < nRow; ++i) {
       for (var j = 0, col = nCol / 2; j < col; ++j) {
         ctx.rect(
-          2 * j * blockWidth + (i % 2 ? 0 : blockWidth) + this.margin,
+          2 * j * blockWidth + (i % 2 ? 0 : blockWidth) + margin,
           i * blockHeight + y,
           blockWidth,
           blockHeight
@@ -60,20 +58,19 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
 
     // draw the outline
     ctx.strokeStyle = this.outline_color;
-    ctx.strokeRect(this.margin, y, drawWidth, drawHeight);
+    ctx.strokeRect(margin, y, drawWidth, drawHeight);
 
     // draw the no image text
-    if (!this.image) {
+    if (this.image.src == "") {
       ctx.textAlign = "center";
-      ctx.fillStyle = this.secondary_text_color;
+      ctx.fillStyle = "#FFFFFF"; //this.secondary_text_color;
       ctx.font = "italic 10pt Sans-serif";
       ctx.fillText("No image", widget_width * 0.5, y + drawHeight * 0.5);
-
       return;
     }
 
     // draw the image
-    ctx.drawImage(this.image, this.margin, y, drawWidth, drawHeight);
+    ctx.drawImage(this.image, margin, y, drawWidth, drawHeight);
   }
 }
 export class ITcVnImageControlWidget extends ControlWidget {
@@ -85,15 +82,13 @@ export class ITcVnImageControlWidget extends ControlWidget {
 
   constructor(name, property, parameter, content) {
     super(name, property, parameter, content);
-    this._url = null;
-    this._img = null;
+    this.image = new Image();
     this._size = ITcVnImageControlWidget.DEFAULT_SIZE;
-    this._offscreenCanvas = null;
-    this.setDefaultValue(this.getDefaultImageData());
-  }
+    this.value = this.getDefaultImageData();
 
-  onDisplayValueChanged(newValue, oldValue) {
-    console.log(newValue);
+    this.on("valueChanged", (newValue, oldValue) => {
+      loadITcVnImageToImage(newValue, this.image);
+    });
   }
 
   computeSize(width) {
@@ -111,14 +106,19 @@ export class ITcVnImageControlWidget extends ControlWidget {
 
     this.drawBackground(ctx, margin, y, drawWidth, drawHeight);
     this.drawOutline(ctx, margin, y, drawWidth, drawHeight);
-    this.drawImageOrPlaceholder(
-      ctx,
-      margin,
-      widget_width,
-      y,
-      drawWidth,
-      drawHeight
-    );
+
+    // draw the no image text
+    if (this.image.src == "") {
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "italic 10pt Sans-serif";
+      ctx.fillText("Drag image here", widget_width * 0.5, y + drawHeight * 0.5);
+
+      return;
+    }
+
+    // draw the image
+    ctx.drawImage(this.image, margin, y, drawWidth, drawHeight);
   }
 
   onDropFile(file) {
@@ -127,9 +127,8 @@ export class ITcVnImageControlWidget extends ControlWidget {
       return false;
     }
 
-    if (this._url) URL.revokeObjectURL(this._url);
-    this._url = URL.createObjectURL(file);
-    this.loadImage(this._url);
+    const url = URL.createObjectURL(file);
+    this.loadDroppedImageToWidget(url);
     return true;
   }
 
@@ -137,69 +136,30 @@ export class ITcVnImageControlWidget extends ControlWidget {
     return ITcVnImageControlWidget.SUPPORTED_TYPES.includes(file.type);
   }
 
-  loadImage(url) {
-    const img = new Image();
-    img.src = url;
-    img.onload = this.handleImageLoad.bind(this, img);
-    img.onerror = () => console.error(`Error loading the image: ${url}`);
+  loadDroppedImageToWidget(url) {
+    const image = new Image();
+    image.src = url;
+    image.onload = this.handleImageOnLoad.bind(this, image);
+    image.onerror = () => {
+      console.error(`Error loading the image: ${url}`);
+      URL.revokeObjectURL(url);
+    };
   }
 
-  handleImageLoad(img) {
-    const [newWidth, newHeight] = this.calculateNewDimensions(img);
-    this._size = new Float32Array([newWidth, newHeight]);
-    this.setupOffscreenCanvas(img);
-    this.setValue(this.serializeOffscreenCanvas());
-    this.triggerParentResetSize();
+  handleImageOnLoad(image) {
+    this.setWidgetSizeToImage(image);
+    this.value = convertImageToITcVnImage(image);
+    URL.revokeObjectURL(image.src);
   }
 
-  calculateNewDimensions(img) {
-    let originalWidth = img.width;
-    let originalHeight = img.height;
+  setWidgetSizeToImage(image) {
+    let originalWidth = image.width;
+    let originalHeight = image.height;
     let newHeight = 300;
     let aspectRatio = originalWidth / originalHeight;
     let newWidth = newHeight * aspectRatio;
-    return [newWidth, newHeight];
-  }
-
-  setupOffscreenCanvas(img) {
-    this._offscreenCanvas = new OffscreenCanvas(img.width, img.height);
-    const ctx = this._offscreenCanvas.getContext("2d");
-    ctx.drawImage(img, 0, 0, img.width, img.height);
-  }
-
-  serializeOffscreenCanvas() {
-    const ctx = this._offscreenCanvas.getContext("2d");
-    const imageData = ctx.getImageData(
-      0,
-      0,
-      this._offscreenCanvas.width,
-      this._offscreenCanvas.height
-    );
-
-    const image = {
-      imageInfo: {
-        nImageSize: imageData.data.length,
-        nWidth: this._offscreenCanvas.width,
-        nHeight: this._offscreenCanvas.height,
-        nXPadding: 0,
-        nYPadding: 0,
-        stPixelFormat: {
-          bSupported: true,
-          bSigned: false,
-          bPlanar: false,
-          bFloat: false,
-          nChannels: 4,
-          ePixelEncoding: "TCVN_PE_NONE",
-          ePixelPackMode: "TCVN_PPM_NONE",
-          nElementSize: 8,
-          nTotalSize: 24,
-        },
-      },
-      imageData: bytesToBase64(imageData.data),
-    };
-
-    // console.log("Serialized Image Data:", image);
-    return image;
+    this._size = new Float32Array([newWidth, newHeight]);
+    this.triggerParentResetSize();
   }
 
   drawBackground(ctx, margin, y, width, height) {
@@ -210,17 +170,6 @@ export class ITcVnImageControlWidget extends ControlWidget {
   drawOutline(ctx, margin, y, width, height) {
     ctx.strokeStyle = ITcVnImageControlWidget.OUTLINE_COLOR;
     ctx.strokeRect(margin, y, width, height);
-  }
-
-  drawImageOrPlaceholder(ctx, margin, widgetWidth, y, width, height) {
-    if (this._offscreenCanvas) {
-      ctx.drawImage(this._offscreenCanvas, margin, y, width, height);
-    } else {
-      ctx.textAlign = "center";
-      ctx.fillStyle = ITcVnImageControlWidget.TEXT_COLOR;
-      ctx.font = "italic 10pt Sans-serif";
-      ctx.fillText("Drag image here...", widgetWidth * 0.5, y + height * 0.5);
-    }
   }
 
   getDefaultImageData() {
