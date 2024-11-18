@@ -1,6 +1,6 @@
 {
   "name": "mobject-graph-ui-vision-pack",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "TwinCAT Vision pack for mobject-graph-ui",
   "type": "module",
   "main": "dist/mobject-graph-ui-vision-pack.bundle.cjs.js",
