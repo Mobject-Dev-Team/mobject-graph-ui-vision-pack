@@ -357,6 +357,7 @@ class ITcVnImageDisplayWidget extends DisplayWidget {
     ctx.fillRect(margin, y, drawWidth, drawHeight);
 
     // create a rectangular clipping path
+    ctx.fillStyle = "#353535";
     ctx.beginPath();
     ctx.rect(margin, y, drawWidth, drawHeight);
     ctx.clip();
@@ -378,7 +379,6 @@ class ITcVnImageDisplayWidget extends DisplayWidget {
         );
       }
     }
-    ctx.fillStyle = "#303030";
     ctx.fill();
 
     // draw the outline
