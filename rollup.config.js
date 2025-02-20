@@ -1,4 +1,5 @@
 import { nodeResolve } from "@rollup/plugin-node-resolve";
+import commonjs from "@rollup/plugin-commonjs";
 import terser from "@rollup/plugin-terser";
 import fs from "fs";
 import path from "path";
@@ -53,6 +54,7 @@ export default {
   external: ["mobject-graph-ui"],
   plugins: [
     nodeResolve(),
+    commonjs(),
     css({
       output: "mobject-graph-ui-vision-pack.css",
     }),
@@ -70,7 +72,8 @@ export default {
       },
       thirdParty: {
         allow: {
-          test: "MIT",
+          test: (licenseType) =>
+            ["MIT", "(MIT AND Zlib)"].includes(licenseType.license),
           failOnUnlicensed: true,
           failOnViolation: true,
         },
@@ -118,13 +121,22 @@ function finallyMoveFile(options) {
   return {
     name: "copy-then-delete",
     closeBundle() {
-      const destDir = path.dirname(options.dest);
-      if (!fs.existsSync(destDir)) {
-        fs.mkdirSync(destDir, { recursive: true });
-      }
+      try {
+        const destDir = path.dirname(options.dest);
 
-      fs.copyFileSync(options.src, options.dest);
-      fs.unlinkSync(options.src);
+        if (!fs.existsSync(destDir)) {
+          fs.mkdirSync(destDir, { recursive: true });
+        }
+
+        if (fs.existsSync(options.src)) {
+          fs.copyFileSync(options.src, options.dest);
+          fs.unlinkSync(options.src);
+        } else {
+          console.error("Source file does not exist:", options.src);
+        }
+      } catch (error) {
+        console.error("Failed to move file:", error);
+      }
     },
   };
 }

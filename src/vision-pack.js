@@ -26,7 +26,7 @@ export class VisionPack {
 
   registerFileAssociation(graphFramework, options = {}) {
     graphFramework.registerFileAssociation(
-      ["jpg", "png", "bmp"],
+      ["jpg", "png", "bmp", "tiff", "tif"],
       "Literal/ITcVnImage",
       "value"
     );

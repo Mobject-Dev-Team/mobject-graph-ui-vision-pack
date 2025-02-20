@@ -1,21 +1,27 @@
 import { DisplayWidget, ControlWidget } from "mobject-graph-ui";
-import {
-  loadITcVnImageToImage,
-  convertImageToITcVnImage,
-} from "../utils/itcvnimage-conversion.js";
+import { iTcVnImageToImage } from "../utils/image-converters/itcvnimage-to-image.js";
+
+import { jpegUrlToITcVnImage } from "../utils/image-converters/jpeg-conversion.js";
+import { pngUrlToITcVnImage } from "../utils/image-converters/png-conversion.js";
+import { bmpUrlToITcVnImage } from "../utils/image-converters/bmp-conversion.js";
+import { tiffUrlToITcVnImage } from "../utils/image-converters/tiff-conversion.js";
 
 export class ITcVnImageDisplayWidget extends DisplayWidget {
   constructor(name, parent, options) {
     super(name, parent, options);
-    this.image = new Image();
+    this.widgetDisplayImage = new Image();
 
-    this.on("valueChanged", (newValue, oldValue) => {
+    this.on("valueChanged", async (newValue, oldValue) => {
       if (newValue) {
-        loadITcVnImageToImage(newValue, this.image);
+        this.widgetDisplayImage = await iTcVnImageToImage(newValue);
       } else {
-        this.image = new Image();
+        this.clearDisplayImage();
       }
     });
+  }
+
+  clearDisplayImage() {
+    this.widgetDisplayImage = new Image();
   }
 
   computeSize() {
@@ -61,7 +67,7 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
     ctx.strokeRect(margin, y, drawWidth, drawHeight);
 
     // draw the no image text
-    if (this.image.src == "") {
+    if (this.widgetDisplayImage.src == "") {
       ctx.textAlign = "center";
       ctx.fillStyle = "#FFFFFF"; //this.secondary_text_color;
       ctx.font = "italic 10pt Sans-serif";
@@ -70,106 +76,165 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
     }
 
     // draw the image
-    ctx.drawImage(this.image, margin, y, drawWidth, drawHeight);
+    ctx.drawImage(this.widgetDisplayImage, margin, y, drawWidth, drawHeight);
   }
 }
 export class ITcVnImageControlWidget extends ControlWidget {
-  static SUPPORTED_TYPES = ["image/jpeg", "image/png", "image/bmp"];
   static DEFAULT_SIZE = new Float32Array([100, 100]);
-  static OUTLINE_COLOR = "#000"; // default outline color
+  static OUTLINE_COLOR = "#000";
   static BACKGROUND_COLOR = "#303030";
   static TEXT_COLOR = "#FFF";
 
   constructor(name, property, parameter, content) {
     super(name, property, parameter, content);
-    this.image = new Image();
-    this._size = ITcVnImageControlWidget.DEFAULT_SIZE;
+    this.widgetDisplayImage = new Image();
+    this.droppedImageSize = ITcVnImageControlWidget.DEFAULT_SIZE;
     this.value = this.getDefaultImageData();
 
-    this.on("valueChanged", (newValue, oldValue) => {
-      loadITcVnImageToImage(newValue, this.image);
+    this.FILE_HANDLERS = {
+      "image/jpeg": (url) => jpegUrlToITcVnImage(url),
+      "image/png": (url) => pngUrlToITcVnImage(url),
+      "image/bmp": (url) => bmpUrlToITcVnImage(url),
+      "image/tiff": (url) => tiffUrlToITcVnImage(url),
+    };
+
+    this.on("valueChanged", async (newValue, oldValue) => {
+      if (newValue) {
+        this.widgetDisplayImage = await iTcVnImageToImage(newValue);
+        this.parent.setDirtyCanvas(true, true);
+      } else {
+        this.clearDisplayImage();
+      }
     });
   }
 
+  clearDisplayImage() {
+    this.widgetDisplayImage = new Image();
+  }
+
   computeSize(width) {
-    return this._size;
+    if (
+      !this.widgetDisplayImage ||
+      !this.widgetDisplayImage.width ||
+      !this.widgetDisplayImage.height
+    ) {
+      return ITcVnImageControlWidget.DEFAULT_SIZE;
+    }
+
+    return new Float32Array([
+      this.droppedImageSize[0],
+      this.droppedImageSize[1] + this.getMetaHeight(),
+    ]);
   }
 
   mouse(event, pos, node) {
     // Mouse interaction handling
   }
 
+  getMetaLines() {
+    return [
+      `${this.value.imageInfo.nWidth}x${this.value.imageInfo.nHeight}px, ${this.value.imageInfo.stPixelFormat.nChannels}ch, ${this.value.imageInfo.stPixelFormat.nElementSize}bit`,
+    ];
+  }
+
+  getMetaHeight() {
+    return this.getMetaLines().length * 16 + 8; // 16px per line + padding
+  }
+
   draw(ctx, node, widget_width, y, H) {
     const margin = 5;
-    const drawWidth = widget_width - 2 * margin;
-    const drawHeight = node.size[1] - margin - y;
+    const drawWidgetWidth = widget_width - 2 * margin;
+    const drawImageHeight =
+      node.size[1] - 2 * margin - y - this.getMetaHeight();
 
-    this.drawBackground(ctx, margin, y, drawWidth, drawHeight);
-    this.drawOutline(ctx, margin, y, drawWidth, drawHeight);
+    this.drawImageBackground(ctx, margin, y, drawWidgetWidth, drawImageHeight);
 
-    // draw the no image text
-    if (this.image.src == "") {
+    if (this.widgetDisplayImage.src == "") {
       ctx.textAlign = "center";
       ctx.fillStyle = "#FFFFFF";
       ctx.font = "italic 10pt Sans-serif";
-      ctx.fillText("Drag image here", widget_width * 0.5, y + drawHeight * 0.5);
-
+      ctx.fillText(
+        "Drag image here",
+        widget_width * 0.5,
+        y + drawImageHeight * 0.5
+      );
       return;
     }
 
-    // draw the image
-    ctx.drawImage(this.image, margin, y, drawWidth, drawHeight);
+    // Draw the main image
+    ctx.drawImage(
+      this.widgetDisplayImage,
+      margin,
+      y,
+      drawWidgetWidth,
+      drawImageHeight
+    );
+
+    // Metadata configuration
+    const metadataLines = this.getMetaLines();
+
+    // Calculate metadata box position
+    const metadataY = y + drawImageHeight + margin; // Position below image
+    const metadataHeight = this.getMetaHeight();
+    const metadataWidth = drawWidgetWidth;
+
+    // Draw metadata text
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "10pt Sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+
+    const textX = margin + 6;
+    const textY = metadataY + 6;
+    metadataLines.forEach((line, index) => {
+      ctx.fillText(line, textX, textY + index * 16);
+    });
+  }
+
+  drawImageBackground(ctx, margin, y, width, height) {
+    ctx.strokeStyle = ITcVnImageControlWidget.OUTLINE_COLOR;
+    ctx.fillStyle = ITcVnImageControlWidget.BACKGROUND_COLOR;
+    ctx.fillRect(margin, y, width, height);
+    ctx.strokeRect(margin, y, width, height);
+  }
+
+  drawMetaBackground(ctx, x, y, width, height) {
+    ctx.strokeStyle = ITcVnImageControlWidget.OUTLINE_COLOR;
+    ctx.fillStyle = ITcVnImageControlWidget.BACKGROUND_COLOR;
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, 4);
+    ctx.fill();
+    ctx.stroke();
   }
 
   onDropFile(file) {
-    if (!this.isSupportedFileType(file)) {
-      console.error("Unsupported file type:", file.type);
+    const fileType = file.type;
+    if (this.FILE_HANDLERS[fileType]) {
+      this.FILE_HANDLERS[fileType](file)
+        .then(async (itcVnImageData) => {
+          this.value = itcVnImageData;
+          this.widgetDisplayImage = await iTcVnImageToImage(itcVnImageData);
+          this.updateDroppedImageSize(this.widgetDisplayImage);
+        })
+        .catch((error) => {
+          console.error(`Error processing the file: ${error}`);
+        });
+
+      return true;
+    } else {
+      console.error(`Unsupported file type: ${fileType}`);
       return false;
     }
-
-    const url = URL.createObjectURL(file);
-    this.loadDroppedImageToWidget(url);
-    return true;
   }
 
-  isSupportedFileType(file) {
-    return ITcVnImageControlWidget.SUPPORTED_TYPES.includes(file.type);
-  }
-
-  loadDroppedImageToWidget(url) {
-    const image = new Image();
-    image.src = url;
-    image.onload = this.handleImageOnLoad.bind(this, image);
-    image.onerror = () => {
-      console.error(`Error loading the image: ${url}`);
-      URL.revokeObjectURL(url);
-    };
-  }
-
-  handleImageOnLoad(image) {
-    this.setWidgetSizeToImage(image);
-    this.value = convertImageToITcVnImage(image);
-    URL.revokeObjectURL(image.src);
-  }
-
-  setWidgetSizeToImage(image) {
+  updateDroppedImageSize(image) {
     let originalWidth = image.width;
     let originalHeight = image.height;
-    let newHeight = 300;
+    let newHeight = 200;
     let aspectRatio = originalWidth / originalHeight;
     let newWidth = newHeight * aspectRatio;
-    this._size = new Float32Array([newWidth, newHeight]);
+    this.droppedImageSize = new Float32Array([newWidth, newHeight]);
     this.triggerParentResetSize();
-  }
-
-  drawBackground(ctx, margin, y, width, height) {
-    ctx.fillStyle = ITcVnImageControlWidget.BACKGROUND_COLOR;
-    ctx.fillRect(margin, y, width, height);
-  }
-
-  drawOutline(ctx, margin, y, width, height) {
-    ctx.strokeStyle = ITcVnImageControlWidget.OUTLINE_COLOR;
-    ctx.strokeRect(margin, y, width, height);
   }
 
   getDefaultImageData() {
