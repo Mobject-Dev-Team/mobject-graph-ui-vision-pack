@@ -8684,7 +8684,7 @@ async function tiffUrlToITcVnImage(file) {
 
         const itcvnimage = {
           imageInfo: {
-            nImageSize: buffer.byteLength,
+            nImageSize: firstTiff.data.length,
             nWidth: firstTiff.width,
             nHeight: firstTiff.height,
             nXPadding: 0,
