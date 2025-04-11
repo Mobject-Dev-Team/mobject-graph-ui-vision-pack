@@ -8735,12 +8735,15 @@
     constructor(name, parent, options) {
       super(name, parent, options);
       this.widgetDisplayImage = new Image();
+      this.imageData = this.getDefaultImageData();
 
       this.on("valueChanged", async (newValue, oldValue) => {
         if (newValue) {
           this.widgetDisplayImage = await iTcVnImageToImage(newValue);
+          this.imageData = newValue;
         } else {
           this.clearDisplayImage();
+          this.imageData = this.getDefaultImageData();
         }
       });
     }
@@ -8750,29 +8753,60 @@
     }
 
     computeSize() {
-      return new Float32Array([60, 60]);
+      if (
+        !this.widgetDisplayImage ||
+        !this.widgetDisplayImage.width ||
+        !this.widgetDisplayImage.height
+      ) {
+        return ITcVnImageControlWidget.DEFAULT_SIZE;
+      }
+
+      return new Float32Array([
+        this.widgetDisplayImage.width,
+        this.widgetDisplayImage.height + this.getMetaHeight(),
+      ]);
+    }
+
+    getMetaLines() {
+      return [
+        `${this.imageData.imageInfo.nWidth}x${this.imageData.imageInfo.nHeight}px, ${this.imageData.imageInfo.stPixelFormat.nChannels}ch, ${this.imageData.imageInfo.stPixelFormat.nElementSize}bit`,
+      ];
+    }
+
+    getMetaHeight() {
+      return this.getMetaLines().length * 16 + 8; // 16px per line + padding
+    }
+
+    mouse(event, pos, node) {
+      //
     }
 
     draw(ctx, node, widget_width, y, H) {
       const margin = 5;
-      const drawWidth = widget_width - margin * 2 + 1;
-      const drawHeight = node.size[1] - margin - y;
+      const drawWidgetWidth = widget_width - 2 * margin;
+      const drawImageHeight =
+        node.size[1] - 2 * margin - y - this.getMetaHeight();
 
       // draw the background
       ctx.fillStyle = "#303030";
-      ctx.fillRect(margin, y, drawWidth, drawHeight);
+      ctx.fillRect(margin, y, drawWidgetWidth, drawImageHeight);
 
       // create a rectangular clipping path
       ctx.fillStyle = "#353535";
       ctx.beginPath();
-      ctx.rect(margin, y, drawWidth, drawHeight);
+      ctx.rect(
+        margin,
+        y,
+        drawWidgetWidth,
+        drawImageHeight + this.getMetaHeight()
+      );
       ctx.clip();
 
       // draw the checkerboard pattern
       let blockHeight = 10;
       let blockWidth = 10;
-      let nRow = drawHeight / blockHeight;
-      let nCol = drawWidth / blockWidth;
+      let nRow = drawImageHeight / blockHeight;
+      let nCol = drawWidgetWidth / blockWidth;
 
       ctx.beginPath();
       for (var i = 0; i < nRow; ++i) {
@@ -8789,19 +8823,69 @@
 
       // draw the outline
       ctx.strokeStyle = this.outline_color;
-      ctx.strokeRect(margin, y, drawWidth, drawHeight);
+      ctx.strokeRect(margin, y, drawWidgetWidth, drawImageHeight);
 
       // draw the no image text
       if (this.widgetDisplayImage.src == "") {
         ctx.textAlign = "center";
         ctx.fillStyle = "#FFFFFF"; //this.secondary_text_color;
         ctx.font = "italic 10pt Sans-serif";
-        ctx.fillText("No image", widget_width * 0.5, y + drawHeight * 0.5);
+        ctx.fillText("No image", widget_width * 0.5, y + drawImageHeight * 0.5);
         return;
       }
 
       // draw the image
-      ctx.drawImage(this.widgetDisplayImage, margin, y, drawWidth, drawHeight);
+      ctx.drawImage(
+        this.widgetDisplayImage,
+        margin,
+        y,
+        drawWidgetWidth,
+        drawImageHeight
+      );
+
+      // Metadata configuration
+      const metadataLines = this.getMetaLines();
+
+      // Calculate metadata box position
+      const metadataY = y + drawImageHeight + margin; // Position below image
+      this.getMetaHeight();
+
+      // Draw metadata text
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "10pt Sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+
+      const textX = margin + 6;
+      const textY = metadataY + 6;
+      metadataLines.forEach((line, index) => {
+        ctx.fillText(line, textX, textY + index * 16);
+      });
+    }
+
+    getDefaultImageData() {
+      const image = {
+        imageInfo: {
+          nImageSize: 0,
+          nWidth: 0,
+          nHeight: 0,
+          nXPadding: 0,
+          nYPadding: 0,
+          stPixelFormat: {
+            bSupported: true,
+            bSigned: false,
+            bPlanar: false,
+            bFloat: false,
+            nChannels: 4,
+            ePixelEncoding: "TCVN_PE_NONE",
+            ePixelPackMode: "TCVN_PPM_NONE",
+            nElementSize: 0,
+            nTotalSize: 0,
+          },
+        },
+        imageData: "",
+      };
+      return image;
     }
   }
   class ITcVnImageControlWidget extends mobjectGraphUi.ControlWidget {
