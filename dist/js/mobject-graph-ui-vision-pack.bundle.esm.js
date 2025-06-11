@@ -252,208 +252,6 @@ function base64ToBytes(str) {
   return result.subarray(0, result.length - missingOctets);
 }
 
-async function iTcVnImageToImage(itcvnimage) {
-  if (!itcvnimage) {
-    throw new Error("Invalid input: Missing itcvnimage data");
-  }
-
-  const {
-    imageInfo: { nWidth, nHeight, stPixelFormat },
-    imageData,
-  } = itcvnimage;
-
-  if (!imageData) {
-    throw new Error("Invalid iTcVnImage: Missing image data.");
-  }
-
-  const binaryData = base64ToBytes(imageData);
-  const { nChannels, nElementSize } = stPixelFormat;
-
-  // Convert binary data to a properly formatted pixel array (RGBA)
-  const pixelArray = createImageCompatiblePixelArray(
-    binaryData,
-    nWidth,
-    nHeight,
-    nChannels,
-    nElementSize
-  );
-
-  // Set the image source from the pixel data
-
-  const image = await createImageFromPixelArray(pixelArray, nWidth, nHeight);
-  return image;
-}
-
-function createImageCompatiblePixelArray(
-  binaryData,
-  width,
-  height,
-  channels,
-  bitDepth
-) {
-  const bytesPerPixel = (channels * bitDepth) / 8;
-  const outputBytes = new Uint8Array(width * height * 4); // Always RGBA (4 channels)
-  let j = 0;
-
-  for (let i = 0; i < binaryData.length; i += bytesPerPixel) {
-    let r = 0,
-      g = 0,
-      b = 0,
-      a = 255; // Default alpha to 255 (opaque)
-
-    if (bitDepth === 8) {
-      if (channels === 1) {
-        r = g = b = binaryData[i];
-      } else if (channels === 2) {
-        r = g = b = binaryData[i];
-        a = binaryData[i + 1];
-      } else if (channels === 3) {
-        r = binaryData[i];
-        g = binaryData[i + 1];
-        b = binaryData[i + 2];
-      } else if (channels === 4) {
-        r = binaryData[i];
-        g = binaryData[i + 1];
-        b = binaryData[i + 2];
-        a = binaryData[i + 3];
-      }
-    } else if (bitDepth === 16) {
-      if (channels === 1) {
-        r = g = b = (binaryData[i] | (binaryData[i + 1] << 8)) >> 8;
-      } else if (channels === 2) {
-        r = g = b = (binaryData[i] | (binaryData[i + 1] << 8)) >> 8;
-        a = (binaryData[i + 2] | (binaryData[i + 3] << 8)) >> 8;
-      } else if (channels === 3) {
-        r = (binaryData[i] | (binaryData[i + 1] << 8)) >> 8;
-        g = (binaryData[i + 2] | (binaryData[i + 3] << 8)) >> 8;
-        b = (binaryData[i + 4] | (binaryData[i + 5] << 8)) >> 8;
-      } else if (channels === 4) {
-        r = (binaryData[i] | (binaryData[i + 1] << 8)) >> 8;
-        g = (binaryData[i + 2] | (binaryData[i + 3] << 8)) >> 8;
-        b = (binaryData[i + 4] | (binaryData[i + 5] << 8)) >> 8;
-        a = (binaryData[i + 6] | (binaryData[i + 7] << 8)) >> 8;
-      }
-    }
-
-    outputBytes.set([r, g, b, a], j);
-    j += 4;
-  }
-
-  return outputBytes;
-}
-
-async function createImageFromPixelArray(pixels, width, height) {
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  ctx.putImageData(
-    new ImageData(new Uint8ClampedArray(pixels), width, height),
-    0,
-    0
-  );
-  const image = new Image();
-  image.src = await canvasToDataURL(canvas);
-  return image;
-}
-
-function createCanvas(w, h) {
-  return typeof OffscreenCanvas !== "undefined"
-    ? new OffscreenCanvas(w, h)
-    : Object.assign(document.createElement("canvas"), { width: w, height: h });
-}
-
-async function canvasToDataURL(canvas) {
-  if (canvas instanceof OffscreenCanvas) {
-    const blob = await canvas.convertToBlob({ type: "image/png" });
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.addEventListener(
-        "load",
-        () => {
-          resolve(reader.result);
-        },
-        false
-      );
-      reader.readAsDataURL(blob);
-    });
-  }
-  return canvas.toDataURL();
-}
-
-class ItcVnImageDataDecoder {
-  constructor(image) {
-    this._buffer = null;
-    this.imageInfo = null;
-    if (image) this.update(image);
-  }
-
-  /**
-   * Update the decoder with a new image
-   * @param {object} image - New image object with imageInfo and imageData
-   */
-  update(image) {
-    this.imageInfo = image?.imageInfo || null;
-    this._buffer = null;
-
-    if (!image?.imageData) return;
-
-    const raw = atob(image.imageData);
-    const buf = new ArrayBuffer(raw.length);
-    const view = new Uint8Array(buf);
-    for (let i = 0; i < raw.length; i++) view[i] = raw.charCodeAt(i);
-    this._buffer = buf;
-  }
-
-  /**
-   * Checks if the decoder has valid data
-   * @returns {boolean}
-   */
-  isValid() {
-    return !!this._buffer && !!this.imageInfo;
-  }
-
-  /**
-   * Gets channel values at pixel (x, y)
-   * @param {number} x - X position in pixels
-   * @param {number} y - Y position in pixels
-   * @returns {number[] | null}
-   */
-  getPixel(x, y) {
-    if (!this.isValid()) return null;
-
-    const { nWidth, nHeight, stPixelFormat: fmt } = this.imageInfo;
-
-    if (x < 0 || y < 0 || x >= nWidth || y >= nHeight) return null;
-
-    const channels = fmt.nChannels;
-    const bitsPerChannel = fmt.nElementSize;
-    const bytesPerChannel = bitsPerChannel / 8;
-    const pixelStride = channels * bytesPerChannel;
-    const rowStride = nWidth * pixelStride;
-    const offset = y * rowStride + x * pixelStride;
-
-    if (offset + pixelStride > this._buffer.byteLength) return null;
-
-    let TypedArray = null;
-    if (fmt.bFloat) {
-      if (bitsPerChannel === 32) TypedArray = Float32Array;
-      else if (bitsPerChannel === 64) TypedArray = Float64Array;
-    } else if (fmt.bSigned) {
-      if (bitsPerChannel === 8) TypedArray = Int8Array;
-      else if (bitsPerChannel === 16) TypedArray = Int16Array;
-      else if (bitsPerChannel === 32) TypedArray = Int32Array;
-    } else {
-      if (bitsPerChannel === 8) TypedArray = Uint8Array;
-      else if (bitsPerChannel === 16) TypedArray = Uint16Array;
-      else if (bitsPerChannel === 32) TypedArray = Uint32Array;
-    }
-
-    if (!TypedArray) return null;
-
-    const view = new TypedArray(this._buffer, offset, channels);
-    return Array.from(view);
-  }
-}
-
 // an image is only able to convey 8bit per channel, and 4 channel (rgba), so that is all this function
 // is designed to do.
 
@@ -8802,73 +8600,303 @@ function bufferToBase64(buf) {
   return btoa(result);
 }
 
-class ITcVnImageDisplayWidget extends DisplayWidget {
-  constructor(name, parent, options) {
-    super(name, parent, options);
+async function iTcVnImageToImage(itcvnimage) {
+  if (!itcvnimage) {
+    throw new Error("Invalid input: Missing itcvnimage data");
+  }
+
+  const {
+    imageInfo: { nWidth, nHeight, stPixelFormat },
+    imageData,
+  } = itcvnimage;
+
+  if (!imageData) {
+    throw new Error("Invalid iTcVnImage: Missing image data.");
+  }
+
+  const binaryData = base64ToBytes(imageData);
+  const { nChannels, nElementSize } = stPixelFormat;
+
+  // Convert binary data to a properly formatted pixel array (RGBA)
+  const pixelArray = createImageCompatiblePixelArray(
+    binaryData,
+    nWidth,
+    nHeight,
+    nChannels,
+    nElementSize
+  );
+
+  // Set the image source from the pixel data
+
+  const image = await createImageFromPixelArray(pixelArray, nWidth, nHeight);
+  return image;
+}
+
+function createImageCompatiblePixelArray(
+  binaryData,
+  width,
+  height,
+  channels,
+  bitDepth
+) {
+  const bytesPerPixel = (channels * bitDepth) / 8;
+  const outputBytes = new Uint8Array(width * height * 4); // Always RGBA (4 channels)
+  let j = 0;
+
+  for (let i = 0; i < binaryData.length; i += bytesPerPixel) {
+    let r = 0,
+      g = 0,
+      b = 0,
+      a = 255; // Default alpha to 255 (opaque)
+
+    if (bitDepth === 8) {
+      if (channels === 1) {
+        r = g = b = binaryData[i];
+      } else if (channels === 2) {
+        r = g = b = binaryData[i];
+        a = binaryData[i + 1];
+      } else if (channels === 3) {
+        r = binaryData[i];
+        g = binaryData[i + 1];
+        b = binaryData[i + 2];
+      } else if (channels === 4) {
+        r = binaryData[i];
+        g = binaryData[i + 1];
+        b = binaryData[i + 2];
+        a = binaryData[i + 3];
+      }
+    } else if (bitDepth === 16) {
+      if (channels === 1) {
+        r = g = b = (binaryData[i] | (binaryData[i + 1] << 8)) >> 8;
+      } else if (channels === 2) {
+        r = g = b = (binaryData[i] | (binaryData[i + 1] << 8)) >> 8;
+        a = (binaryData[i + 2] | (binaryData[i + 3] << 8)) >> 8;
+      } else if (channels === 3) {
+        r = (binaryData[i] | (binaryData[i + 1] << 8)) >> 8;
+        g = (binaryData[i + 2] | (binaryData[i + 3] << 8)) >> 8;
+        b = (binaryData[i + 4] | (binaryData[i + 5] << 8)) >> 8;
+      } else if (channels === 4) {
+        r = (binaryData[i] | (binaryData[i + 1] << 8)) >> 8;
+        g = (binaryData[i + 2] | (binaryData[i + 3] << 8)) >> 8;
+        b = (binaryData[i + 4] | (binaryData[i + 5] << 8)) >> 8;
+        a = (binaryData[i + 6] | (binaryData[i + 7] << 8)) >> 8;
+      }
+    }
+
+    outputBytes.set([r, g, b, a], j);
+    j += 4;
+  }
+
+  return outputBytes;
+}
+
+async function createImageFromPixelArray(pixels, width, height) {
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.putImageData(
+    new ImageData(new Uint8ClampedArray(pixels), width, height),
+    0,
+    0
+  );
+  const image = new Image();
+  image.src = await canvasToDataURL(canvas);
+  return image;
+}
+
+function createCanvas(w, h) {
+  return typeof OffscreenCanvas !== "undefined"
+    ? new OffscreenCanvas(w, h)
+    : Object.assign(document.createElement("canvas"), { width: w, height: h });
+}
+
+async function canvasToDataURL(canvas) {
+  if (canvas instanceof OffscreenCanvas) {
+    const blob = await canvas.convertToBlob({ type: "image/png" });
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.addEventListener(
+        "load",
+        () => {
+          resolve(reader.result);
+        },
+        false
+      );
+      reader.readAsDataURL(blob);
+    });
+  }
+  return canvas.toDataURL();
+}
+
+class ItcVnImageDataDecoder {
+  constructor(image) {
+    this._buffer = null;
+    this.imageInfo = null;
+    if (image) this.update(image);
+  }
+
+  /**
+   * Update the decoder with a new image
+   * @param {object} image - New image object with imageInfo and imageData
+   */
+  update(image) {
+    this.imageInfo = image?.imageInfo || null;
+    this._buffer = null;
+
+    if (!image?.imageData) return;
+
+    const raw = atob(image.imageData);
+    const buf = new ArrayBuffer(raw.length);
+    const view = new Uint8Array(buf);
+    for (let i = 0; i < raw.length; i++) view[i] = raw.charCodeAt(i);
+    this._buffer = buf;
+  }
+
+  /**
+   * Checks if the decoder has valid data
+   * @returns {boolean}
+   */
+  isValid() {
+    return !!this._buffer && !!this.imageInfo;
+  }
+
+  /**
+   * Gets channel values at pixel (x, y)
+   * @param {number} x - X position in pixels
+   * @param {number} y - Y position in pixels
+   * @returns {number[] | null}
+   */
+  getPixel(x, y) {
+    if (!this.isValid()) return null;
+
+    const { nWidth, nHeight, stPixelFormat: fmt } = this.imageInfo;
+
+    if (x < 0 || y < 0 || x >= nWidth || y >= nHeight) return null;
+
+    const channels = fmt.nChannels;
+    const bitsPerChannel = fmt.nElementSize;
+    const bytesPerChannel = bitsPerChannel / 8;
+    const pixelStride = channels * bytesPerChannel;
+    const rowStride = nWidth * pixelStride;
+    const offset = y * rowStride + x * pixelStride;
+
+    if (offset + pixelStride > this._buffer.byteLength) return null;
+
+    let TypedArray = null;
+    if (fmt.bFloat) {
+      if (bitsPerChannel === 32) TypedArray = Float32Array;
+      else if (bitsPerChannel === 64) TypedArray = Float64Array;
+    } else if (fmt.bSigned) {
+      if (bitsPerChannel === 8) TypedArray = Int8Array;
+      else if (bitsPerChannel === 16) TypedArray = Int16Array;
+      else if (bitsPerChannel === 32) TypedArray = Int32Array;
+    } else {
+      if (bitsPerChannel === 8) TypedArray = Uint8Array;
+      else if (bitsPerChannel === 16) TypedArray = Uint16Array;
+      else if (bitsPerChannel === 32) TypedArray = Uint32Array;
+    }
+
+    if (!TypedArray) return null;
+
+    const view = new TypedArray(this._buffer, offset, channels);
+    return Array.from(view);
+  }
+}
+
+class ImageDisplayComponent {
+  static DEFAULT_IMAGE_DATA = {
+    imageInfo: {
+      nImageSize: 0,
+      nWidth: 0,
+      nHeight: 0,
+      nXPadding: 0,
+      nYPadding: 0,
+      stPixelFormat: {
+        bSupported: true,
+        bSigned: false,
+        bPlanar: false,
+        bFloat: false,
+        nChannels: 4,
+        ePixelEncoding: "TCVN_PE_NONE",
+        ePixelPackMode: "TCVN_PPM_NONE",
+        nElementSize: 0,
+        nTotalSize: 0,
+      },
+    },
+    imageData: "",
+  };
+
+  constructor({ defaultImageData, margin = 5, imageTopPadding = 1 } = {}) {
+    this.margin = margin;
+    this.imageTopPadding = imageTopPadding;
     this.widgetDisplayImage = new Image();
-    this.imageData = this.getDefaultImageData();
-    this.margin = 5;
+    this.imageData =
+      defaultImageData || ImageDisplayComponent.DEFAULT_IMAGE_DATA;
     this.hoverImageCoords = null;
     this.lastComputedSize = null;
-    this.imageTopPadding = 1;
     this.itcVnImageDataDecoder = new ItcVnImageDataDecoder();
+    this._imageDrawRect = null;
+    this._loadToken = 0;
+  }
 
-    this.on("valueChanged", async (newValue, oldValue) => {
-      if (newValue) {
-        this.widgetDisplayImage = await iTcVnImageToImage(newValue);
-        this.imageData = newValue;
-        this.itcVnImageDataDecoder.update(newValue);
-      } else {
-        this.clearDisplayImage();
-        this.imageData = this.getDefaultImageData();
-      }
-    });
+  async setImageData(newValue) {
+    this.lastComputedSize = null;
+    if (newValue) {
+      const loadToken = ++this._loadToken;
+      const img = await iTcVnImageToImage(newValue);
+      if (loadToken !== this._loadToken) return;
+      this.widgetDisplayImage = img;
+      this.imageData = newValue;
+      this.itcVnImageDataDecoder.update(newValue);
+    } else {
+      this.clearDisplayImage();
+      this.imageData = ImageDisplayComponent.DEFAULT_IMAGE_DATA;
+    }
   }
 
   clearDisplayImage() {
     this.widgetDisplayImage = new Image();
+    this.lastComputedSize = null;
   }
 
-  computeSize() {
+  computeSize(widgetWidth = 100, widgetHeight = 100) {
     if (
       !this.widgetDisplayImage ||
       !this.widgetDisplayImage.width ||
       !this.widgetDisplayImage.height
     ) {
-      return ITcVnImageControlWidget.DEFAULT_SIZE;
+      return new Float32Array([widgetWidth, widgetHeight]);
     }
-
     if (this.lastComputedSize) {
       return this.lastComputedSize;
     }
-
-    return new Float32Array([
+    const result = new Float32Array([
       this.widgetDisplayImage.width,
       this.widgetDisplayImage.height + this.getMetaHeight(),
     ]);
+    this.lastComputedSize = result;
+    return result;
   }
 
   getMetaLines() {
+    const info = this.imageData?.imageInfo || {};
+    const fmt = info.stPixelFormat || {};
     return [
-      `${this.imageData.imageInfo.nWidth}x${this.imageData.imageInfo.nHeight}px, ${this.imageData.imageInfo.stPixelFormat.nChannels}ch, ${this.imageData.imageInfo.stPixelFormat.nElementSize}bit`,
+      `${info.nWidth || 0}x${info.nHeight || 0}px, ${fmt.nChannels || 0}ch, ${
+        fmt.nElementSize || 0
+      }bit`,
     ];
   }
 
   getMetaHeight() {
-    return this.getMetaLines().length * 16 + 8; // 16px per line + padding
+    return this.getMetaLines().length * 16 + 8;
   }
 
-  mouse(event, pos, node) {
-    //
-  }
-
-  onMouseOver(event, pos, node) {
-    if (!this._imageDrawRect) return;
-    if (!this.value) return;
+  onMouseOver(_, pos, __, value) {
+    if (!this._imageDrawRect || !value) return;
 
     const { x, y, width, height } = this._imageDrawRect;
-    const nativeWidth = this.value.imageInfo.nWidth;
-    const nativeHeight = this.value.imageInfo.nHeight;
+    const nativeWidth = value.imageInfo.nWidth;
+    const nativeHeight = value.imageInfo.nHeight;
 
     const imageX = pos[0] - x;
     const imageY = pos[1] - y;
@@ -8876,7 +8904,6 @@ class ITcVnImageDisplayWidget extends DisplayWidget {
     if (imageX >= 0 && imageX <= width && imageY >= 0 && imageY <= height) {
       const scaleX = nativeWidth / width;
       const scaleY = nativeHeight / height;
-
       this.hoverImageCoords = {
         imgX: Math.floor(imageX * scaleX),
         imgY: Math.floor(imageY * scaleY),
@@ -8886,62 +8913,46 @@ class ITcVnImageDisplayWidget extends DisplayWidget {
     } else {
       this.hoverImageCoords = null;
     }
-
-    this.parent?.graph?.setDirtyCanvas(true, false);
   }
 
-  draw(ctx, node, widget_width, y, H) {
+  draw(ctx, node, widget_width, y, H, opts = {}) {
+    const {
+      showEmptyText = "No image",
+      metaLines = this.getMetaLines(),
+      image = this.widgetDisplayImage,
+      value = this.imageData,
+      outline_color = "#000",
+      metaTextColor = "#FFF",
+      metaFont = "10pt Sans-serif",
+    } = opts;
+
     const drawWidgetWidth = widget_width - 2 * this.margin;
     const drawImageHeight =
       node.size[1] - 2 * this.margin - y - this.getMetaHeight();
     const drawImageY = y + this.imageTopPadding;
-    // draw the background
-    ctx.fillStyle = "#303030";
-    ctx.fillRect(this.margin, drawImageY, drawWidgetWidth, drawImageHeight);
 
-    // create a rectangular clipping path
-    ctx.fillStyle = "#353535";
-    ctx.beginPath();
-    ctx.rect(
-      this.margin,
-      drawImageY,
+    this._drawBackgroundAndCheckerboard(
+      ctx,
       drawWidgetWidth,
-      drawImageHeight + this.getMetaHeight()
+      drawImageY,
+      drawImageHeight
     );
-    ctx.clip();
+    this._drawImageOutline(
+      ctx,
+      drawWidgetWidth,
+      drawImageY,
+      drawImageHeight,
+      outline_color
+    );
 
-    // draw the checkerboard pattern
-    let blockHeight = 10;
-    let blockWidth = 10;
-    let nRow = drawImageHeight / blockHeight;
-    let nCol = drawWidgetWidth / blockWidth;
-
-    ctx.beginPath();
-    for (var i = 0; i < nRow; ++i) {
-      for (var j = 0, col = nCol / 2; j < col; ++j) {
-        ctx.rect(
-          2 * j * blockWidth + (i % 2 ? 0 : blockWidth) + this.margin,
-          i * blockHeight + drawImageY,
-          blockWidth,
-          blockHeight
-        );
-      }
-    }
-    ctx.fill();
-
-    // draw the outline
-    ctx.strokeStyle = this.outline_color;
-    ctx.strokeRect(this.margin, drawImageY, drawWidgetWidth, drawImageHeight);
-
-    // draw the no image text
-    if (this.widgetDisplayImage.src == "") {
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#FFFFFF"; //this.secondary_text_color;
-      ctx.font = "italic 10pt Sans-serif";
-      ctx.fillText(
-        "No image",
-        widget_width * 0.5,
-        drawImageY + drawImageHeight * 0.5
+    if (!image.src) {
+      this._drawEmptyText(
+        ctx,
+        widget_width,
+        drawImageY,
+        drawImageHeight,
+        showEmptyText,
+        metaTextColor
       );
       return;
     }
@@ -8953,142 +8964,180 @@ class ITcVnImageDisplayWidget extends DisplayWidget {
       height: drawImageHeight,
     };
 
-    // draw the image
     ctx.drawImage(
-      this.widgetDisplayImage,
+      image,
       this.margin,
       drawImageY,
       drawWidgetWidth,
       drawImageHeight
     );
 
-    // Metadata configuration
-    const metadataLines = this.getMetaLines();
-
-    // Calculate metadata box position
-    const metadataY = drawImageY + drawImageHeight + this.margin; // Position below image
-    const metadataHeight = this.getMetaHeight();
-
-    // Draw metadata text
-    ctx.fillStyle = "#FFFFFF";
-    ctx.font = "10pt Sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-
-    const textX = this.margin + 6;
-    const textY = metadataY + 6;
-    metadataLines.forEach((line, index) => {
-      ctx.fillText(line, textX, textY + index * 16);
-    });
+    this._drawMeta(
+      ctx,
+      metaLines,
+      metaFont,
+      metaTextColor,
+      drawImageY,
+      drawImageHeight
+    );
 
     if (this.hoverImageCoords && this._imageDrawRect) {
-      const { imgX, imgY, canvasX, canvasY } = this.hoverImageCoords;
-      const pixel = this.itcVnImageDataDecoder?.getPixel(imgX, imgY);
-
-      const labelLines = [`📐 (${imgX}, ${imgY})`];
-
-      if (pixel && Array.isArray(pixel)) {
-        const emojiMapByLength = {
-          1: ["🔲"],
-          2: ["🔲", "🔳"],
-          3: ["🔴", "🟢", "🔵"],
-          4: ["🔴", "🟢", "🔵", "🔳"],
-        };
-
-        const emojis = emojiMapByLength[pixel.length] || [];
-
-        for (let i = 0; i < pixel.length; i++) {
-          const emoji = emojis[i] || `Ch${i + 1}`;
-          labelLines.push(`${emoji}: ${pixel[i]}`);
-        }
-      } else {
-        labelLines.push(`[?]`);
-      }
-
-      // --- Text & layout ---
-      ctx.font = "10pt Sans-serif";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-
-      const padding = 4;
-      const textWidth = Math.max(
-        ...labelLines.map((line) => ctx.measureText(line).width)
-      );
-      const tooltipWidth = textWidth + padding * 2;
-      const tooltipHeight = labelLines.length * 16 + padding * 2;
-
-      // --- Start from default position (bottom-right) ---
-      const offsetX = 12;
-      const offsetY = 12;
-      let tooltipX = canvasX + offsetX;
-      let tooltipY = canvasY + offsetY;
-
-      // --- Conditionally flip if out of bounds ---
-      if (tooltipX + tooltipWidth > node.size[0]) {
-        tooltipX = canvasX - tooltipWidth - offsetX;
-      }
-      if (tooltipY + tooltipHeight > node.size[1]) {
-        tooltipY = canvasY - tooltipHeight - offsetY;
-      }
-
-      // --- Clamp to edge (just in case) ---
-      tooltipX = Math.max(
-        2,
-        Math.min(tooltipX, node.size[0] - tooltipWidth - 2)
-      );
-      tooltipY = Math.max(
-        2,
-        Math.min(tooltipY, node.size[1] - tooltipHeight - 2)
-      );
-
-      // --- Draw background ---
-      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-      ctx.strokeStyle = "#FFFFFF";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 4);
-      ctx.fill();
-      ctx.stroke();
-
-      // --- Draw text ---
-      ctx.fillStyle = "#FFFFFF";
-      labelLines.forEach((line, i) => {
-        ctx.fillText(line, tooltipX + padding, tooltipY + padding + i * 16);
-      });
+      this._drawHoverTooltip(ctx, node, metaFont);
     }
 
     const totalHeight =
-      2 * this.margin + drawImageHeight + metadataHeight + drawImageY;
+      2 * this.margin + drawImageHeight + this.getMetaHeight() + drawImageY;
     const totalWidth = widget_width;
-
     this.lastComputedSize = new Float32Array([totalWidth, totalHeight]);
   }
 
-  getDefaultImageData() {
-    const image = {
-      imageInfo: {
-        nImageSize: 0,
-        nWidth: 0,
-        nHeight: 0,
-        nXPadding: 0,
-        nYPadding: 0,
-        stPixelFormat: {
-          bSupported: true,
-          bSigned: false,
-          bPlanar: false,
-          bFloat: false,
-          nChannels: 4,
-          ePixelEncoding: "TCVN_PE_NONE",
-          ePixelPackMode: "TCVN_PPM_NONE",
-          nElementSize: 0,
-          nTotalSize: 0,
-        },
-      },
-      imageData: "",
-    };
-    return image;
+  _drawBackgroundAndCheckerboard(ctx, width, y, height) {
+    ctx.fillStyle = "#303030";
+    ctx.fillRect(this.margin, y, width, height);
+
+    const blockSize = 10;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(this.margin, y, width, height);
+    ctx.clip();
+
+    const blocksY = Math.ceil(height / blockSize);
+    const blocksX = Math.ceil(width / blockSize);
+
+    for (let i = 0; i < blocksY; ++i) {
+      for (let j = 0; j < blocksX; ++j) {
+        if ((i + j) % 2 === 0) {
+          const x = this.margin + j * blockSize;
+          const yy = y + i * blockSize;
+          const w = Math.min(blockSize, width - (x - this.margin));
+          const h = Math.min(blockSize, height - (yy - y));
+          ctx.fillStyle = "#404040";
+          ctx.fillRect(x, yy, w, h);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  _drawImageOutline(ctx, width, y, height, color) {
+    ctx.strokeStyle = color;
+    ctx.strokeRect(this.margin, y, width, height);
+  }
+
+  _drawEmptyText(ctx, widget_width, y, height, text, color) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = color;
+    ctx.font = "italic 10pt Sans-serif";
+    ctx.fillText(text, widget_width * 0.5, y + height * 0.5);
+  }
+
+  _drawMeta(ctx, metaLines, font, color, y, height) {
+    const metadataY = y + height + this.margin;
+    const textX = this.margin + 6;
+    const textY = metadataY + 6;
+    ctx.fillStyle = color;
+    ctx.font = font;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    metaLines.forEach((line, index) => {
+      ctx.fillText(line, textX, textY + index * 16);
+    });
+  }
+
+  _drawHoverTooltip(ctx, node, font) {
+    const { imgX, imgY, canvasX, canvasY } = this.hoverImageCoords;
+    const pixel = this.itcVnImageDataDecoder?.getPixel(imgX, imgY);
+    const labelLines = [`📐 ${imgX}, ${imgY}`];
+
+    if (pixel && Array.isArray(pixel)) {
+      const emojiMapByLength = {
+        1: ["🔲"],
+        2: ["🔲", "🔳"],
+        3: ["🔴", "🟢", "🔵"],
+        4: ["🔴", "🟢", "🔵", "🔳"],
+      };
+      const emojis = emojiMapByLength[pixel.length] || [];
+      for (let i = 0; i < pixel.length; i++) {
+        const emoji = emojis[i] || `Ch${i + 1}`;
+        labelLines.push(`${emoji} ${pixel[i]}`);
+      }
+    } else {
+      labelLines.push(`[?]`);
+    }
+
+    ctx.font = font;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    const padding = 5;
+    const lineHeight = 20;
+    const textWidth = Math.max(
+      ...labelLines.map((line) => ctx.measureText(line).width)
+    );
+
+    // Add extra width for emoji padding
+    const tooltipWidth = textWidth + padding * 2 + 4;
+    const tooltipHeight = labelLines.length * lineHeight + padding * 2;
+
+    let tooltipX = canvasX + 12;
+    let tooltipY = canvasY + 12;
+    if (tooltipX + tooltipWidth > node.size[0])
+      tooltipX = canvasX - tooltipWidth - 12;
+    if (tooltipY + tooltipHeight > node.size[1])
+      tooltipY = canvasY - tooltipHeight - 12;
+    tooltipX = Math.max(2, Math.min(tooltipX, node.size[0] - tooltipWidth - 2));
+    tooltipY = Math.max(
+      2,
+      Math.min(tooltipY, node.size[1] - tooltipHeight - 2)
+    );
+
+    // Draw background
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.strokeStyle = "#FFF";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    // Draw text with vertical centering
+    ctx.fillStyle = "#FFF";
+    const verticalOffset = padding + lineHeight * 0.8;
+    labelLines.forEach((line, i) => {
+      ctx.fillText(
+        line,
+        tooltipX + padding + 2,
+        tooltipY + verticalOffset + i * lineHeight
+      );
+    });
   }
 }
+
+class ITcVnImageDisplayWidget extends DisplayWidget {
+  constructor(name, parent, options) {
+    super(name, parent, options);
+    this.imageDisplay = new ImageDisplayComponent({});
+    this.on("valueChanged", async (newValue, oldValue) => {
+      await this.imageDisplay.setImageData(newValue);
+    });
+  }
+
+  computeSize() {
+    return this.imageDisplay.computeSize(100, 100);
+  }
+
+  onMouseOver(event, pos, node) {
+    this.imageDisplay.onMouseOver(event, pos, node, this.value);
+    this.parent?.graph?.setDirtyCanvas(true, false);
+  }
+
+  draw(ctx, node, widget_width, y, H) {
+    this.imageDisplay.draw(ctx, node, widget_width, y, H, {
+      showEmptyText: "No image",
+      outline_color: "#000",
+    });
+  }
+}
+
 class ITcVnImageControlWidget extends ControlWidget {
   static DEFAULT_SIZE = new Float32Array([100, 100]);
   static OUTLINE_COLOR = "#000";
@@ -9097,14 +9146,8 @@ class ITcVnImageControlWidget extends ControlWidget {
 
   constructor(name, property, parameter, content) {
     super(name, property, parameter, content);
-    this.widgetDisplayImage = new Image();
+    this.imageDisplay = new ImageDisplayComponent({});
     this.droppedImageSize = ITcVnImageControlWidget.DEFAULT_SIZE;
-    this.value = this.getDefaultImageData();
-    this.margin = 5;
-    this.hoverImageCoords = null;
-    this.lastComputedSize = null;
-    this.imageTopPadding = 1;
-    this.itcVnImageDataDecoder = new ItcVnImageDataDecoder();
 
     this.FILE_HANDLERS = {
       "image/jpeg": (url) => jpegUrlToITcVnImage(url),
@@ -9114,248 +9157,41 @@ class ITcVnImageControlWidget extends ControlWidget {
     };
 
     this.on("valueChanged", async (newValue, oldValue) => {
-      if (newValue) {
-        this.widgetDisplayImage = await iTcVnImageToImage(newValue);
-        this.itcVnImageDataDecoder.update(newValue);
-        this.parent.setDirtyCanvas(true, true);
-      } else {
-        this.clearDisplayImage();
-      }
+      await this.imageDisplay.setImageData(newValue);
+      this.parent.setDirtyCanvas(true, true);
     });
   }
 
-  clearDisplayImage() {
-    this.widgetDisplayImage = new Image();
-  }
-
-  computeSize(width) {
-    if (
-      !this.widgetDisplayImage ||
-      !this.widgetDisplayImage.width ||
-      !this.widgetDisplayImage.height
-    ) {
-      return ITcVnImageControlWidget.DEFAULT_SIZE;
-    }
-
-    if (this.lastComputedSize) {
-      return this.lastComputedSize;
-    }
-
-    return new Float32Array([
+  computeSize() {
+    return this.imageDisplay.computeSize(
       this.droppedImageSize[0],
-      this.droppedImageSize[1] + this.getMetaHeight(),
-    ]);
-  }
-
-  mouse(event, pos, node) {
-    // Mouse interaction handling
+      this.droppedImageSize[1]
+    );
   }
 
   onMouseOver(event, pos, node) {
-    if (!this._imageDrawRect) return;
-    if (!this.value) return;
-
-    const { x, y, width, height } = this._imageDrawRect;
-    const nativeWidth = this.value.imageInfo.nWidth;
-    const nativeHeight = this.value.imageInfo.nHeight;
-
-    const imageX = pos[0] - x;
-    const imageY = pos[1] - y;
-
-    if (imageX >= 0 && imageX <= width && imageY >= 0 && imageY <= height) {
-      const scaleX = nativeWidth / width;
-      const scaleY = nativeHeight / height;
-
-      this.hoverImageCoords = {
-        imgX: Math.floor(imageX * scaleX),
-        imgY: Math.floor(imageY * scaleY),
-        canvasX: pos[0],
-        canvasY: pos[1],
-      };
-    } else {
-      this.hoverImageCoords = null;
-    }
-
+    this.imageDisplay.onMouseOver(event, pos, node, this.value);
     this.parent?.graph?.setDirtyCanvas(true, false);
   }
 
-  getMetaLines() {
-    return [
-      `${this.value.imageInfo.nWidth}x${this.value.imageInfo.nHeight}px, ${this.value.imageInfo.stPixelFormat.nChannels}ch, ${this.value.imageInfo.stPixelFormat.nElementSize}bit`,
-    ];
-  }
-
-  getMetaHeight() {
-    return this.getMetaLines().length * 16 + 8; // 16px per line + padding
-  }
-
   draw(ctx, node, widget_width, y, H) {
-    const drawWidgetWidth = widget_width - 2 * this.margin;
-    const drawImageHeight =
-      node.size[1] - 2 * this.margin - y - this.getMetaHeight();
-    const drawImageY = y + this.imageTopPadding;
-
-    this.drawImageBackground(ctx, drawImageY, drawWidgetWidth, drawImageHeight);
-
-    if (this.widgetDisplayImage.src == "") {
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = "italic 10pt Sans-serif";
-      ctx.fillText(
-        "Drag image here",
-        widget_width * 0.5,
-        drawImageY + drawImageHeight * 0.5
-      );
-      return;
-    }
-
-    this._imageDrawRect = {
-      x: this.margin,
-      y: drawImageY,
-      width: drawWidgetWidth,
-      height: drawImageHeight,
-    };
-
-    // Draw the main image
-    ctx.drawImage(
-      this.widgetDisplayImage,
-      this.margin,
-      drawImageY,
-      drawWidgetWidth,
-      drawImageHeight
-    );
-
-    // Metadata configuration
-    const metadataLines = this.getMetaLines();
-
-    // Calculate metadata box position
-    const metadataY = drawImageY + drawImageHeight + this.margin;
-    const metadataHeight = this.getMetaHeight();
-
-    // Draw metadata text
-    ctx.fillStyle = "#FFFFFF";
-    ctx.font = "10pt Sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-
-    const textX = this.margin + 6;
-    const textY = metadataY + 6;
-    metadataLines.forEach((line, index) => {
-      ctx.fillText(line, textX, textY + index * 16);
+    this.imageDisplay.draw(ctx, node, widget_width, y, H, {
+      showEmptyText: "Drag image here",
+      outline_color: ITcVnImageControlWidget.OUTLINE_COLOR,
     });
-
-    if (this.hoverImageCoords && this._imageDrawRect) {
-      const { imgX, imgY, canvasX, canvasY } = this.hoverImageCoords;
-      const pixel = this.itcVnImageDataDecoder?.getPixel(imgX, imgY);
-
-      const labelLines = [`📐 (${imgX}, ${imgY})`];
-
-      if (pixel && Array.isArray(pixel)) {
-        const emojiMapByLength = {
-          1: ["🔲"],
-          2: ["🔲", "🔳"],
-          3: ["🔴", "🟢", "🔵"],
-          4: ["🔴", "🟢", "🔵", "🔳"],
-        };
-
-        const emojis = emojiMapByLength[pixel.length] || [];
-
-        for (let i = 0; i < pixel.length; i++) {
-          const emoji = emojis[i] || `Ch${i + 1}`;
-          labelLines.push(`${emoji}: ${pixel[i]}`);
-        }
-      } else {
-        labelLines.push(`[?]`);
-      }
-
-      // --- Text & layout ---
-      ctx.font = "10pt Sans-serif";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-
-      const padding = 4;
-      const textWidth = Math.max(
-        ...labelLines.map((line) => ctx.measureText(line).width)
-      );
-      const tooltipWidth = textWidth + padding * 2;
-      const tooltipHeight = labelLines.length * 16 + padding * 2;
-
-      // --- Start from default position (bottom-right) ---
-      const offsetX = 12;
-      const offsetY = 12;
-      let tooltipX = canvasX + offsetX;
-      let tooltipY = canvasY + offsetY;
-
-      // --- Conditionally flip if out of bounds ---
-      if (tooltipX + tooltipWidth > node.size[0]) {
-        tooltipX = canvasX - tooltipWidth - offsetX;
-      }
-      if (tooltipY + tooltipHeight > node.size[1]) {
-        tooltipY = canvasY - tooltipHeight - offsetY;
-      }
-
-      // --- Clamp to edge (just in case) ---
-      tooltipX = Math.max(
-        2,
-        Math.min(tooltipX, node.size[0] - tooltipWidth - 2)
-      );
-      tooltipY = Math.max(
-        2,
-        Math.min(tooltipY, node.size[1] - tooltipHeight - 2)
-      );
-
-      // --- Draw background ---
-      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-      ctx.strokeStyle = "#FFFFFF";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 4);
-      ctx.fill();
-      ctx.stroke();
-
-      // --- Draw text ---
-      ctx.fillStyle = "#FFFFFF";
-      labelLines.forEach((line, i) => {
-        ctx.fillText(line, tooltipX + padding, tooltipY + padding + i * 16);
-      });
-    }
-
-    const totalHeight =
-      2 * this.margin + drawImageHeight + metadataHeight + drawImageY;
-    const totalWidth = widget_width;
-
-    this.lastComputedSize = new Float32Array([totalWidth, totalHeight]);
   }
 
-  drawImageBackground(ctx, y, width, height) {
-    ctx.strokeStyle = ITcVnImageControlWidget.OUTLINE_COLOR;
-    ctx.fillStyle = ITcVnImageControlWidget.BACKGROUND_COLOR;
-    ctx.fillRect(this.margin, y, width, height);
-    ctx.strokeRect(this.margin, y, width, height);
-  }
-
-  drawMetaBackground(ctx, x, y, width, height) {
-    ctx.strokeStyle = ITcVnImageControlWidget.OUTLINE_COLOR;
-    ctx.fillStyle = ITcVnImageControlWidget.BACKGROUND_COLOR;
-    ctx.beginPath();
-    ctx.roundRect(x, y, width, height, 4);
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  onDropFile(file) {
+  async onDropFile(file) {
     const fileType = file.type;
     if (this.FILE_HANDLERS[fileType]) {
-      this.FILE_HANDLERS[fileType](file)
-        .then(async (itcVnImageData) => {
-          this.value = itcVnImageData;
-          this.widgetDisplayImage = await iTcVnImageToImage(itcVnImageData);
-          this.updateDroppedImageSize(this.widgetDisplayImage);
-        })
-        .catch((error) => {
-          console.error(`Error processing the file: ${error}`);
-        });
-
+      try {
+        const itcVnImageData = await this.FILE_HANDLERS[fileType](file);
+        this.value = itcVnImageData;
+        await this.imageDisplay.setImageData(itcVnImageData);
+        this.updateDroppedImageSize(this.imageDisplay.widgetDisplayImage);
+      } catch (error) {
+        console.error(`Error processing the file: ${error}`);
+      }
       return true;
     } else {
       console.error(`Unsupported file type: ${fileType}`);
@@ -9370,60 +9206,9 @@ class ITcVnImageControlWidget extends ControlWidget {
     let aspectRatio = originalWidth / originalHeight;
     let newWidth = newHeight * aspectRatio;
     this.droppedImageSize = new Float32Array([newWidth, newHeight]);
-    this.triggerParentResetSize();
-  }
-
-  getDefaultImageData() {
-    const image = {
-      imageInfo: {
-        nImageSize: 0,
-        nWidth: 0,
-        nHeight: 0,
-        nXPadding: 0,
-        nYPadding: 0,
-        stPixelFormat: {
-          bSupported: true,
-          bSigned: false,
-          bPlanar: false,
-          bFloat: false,
-          nChannels: 4,
-          ePixelEncoding: "TCVN_PE_NONE",
-          ePixelPackMode: "TCVN_PPM_NONE",
-          nElementSize: 0,
-          nTotalSize: 0,
-        },
-      },
-      imageData: "",
-    };
-    return image;
+    this.triggerParentResetSize?.();
   }
 }
-
-/* Example of data
----------------------------
-{
-    imageInfo: {
-        nImageSize: 75,
-        nWidth: 5,
-        nHeight: 5,
-        nXPadding: 0,
-        nYPadding: 0,
-        stPixelFormat: {
-            bSupported: true,
-            bSigned: false,
-            bPlanar: false,
-            bFloat: false,
-            nChannels: 3,
-            ePixelEncoding: "TCVN_PE_NONE",
-            ePixelPackMode: "TCVN_PPM_NONE",
-            nElementSize: 8,
-            nTotalSize: 24,
-        },
-    },
-    imageData:
-        "7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk7Rwk",
-};
-*/
 
 class VisionPack {
   install(graphFramework = new GraphFramework(), options) {
