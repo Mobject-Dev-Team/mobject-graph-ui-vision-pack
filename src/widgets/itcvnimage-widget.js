@@ -1,5 +1,6 @@
 import { DisplayWidget, ControlWidget } from "mobject-graph-ui";
 import { iTcVnImageToImage } from "../utils/image-converters/itcvnimage-to-image.js";
+import { ItcVnImageDataDecoder } from "../utils/itcvnimagedata-decoder.js";
 
 import { jpegUrlToITcVnImage } from "../utils/image-converters/jpeg-conversion.js";
 import { pngUrlToITcVnImage } from "../utils/image-converters/png-conversion.js";
@@ -11,11 +12,17 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
     super(name, parent, options);
     this.widgetDisplayImage = new Image();
     this.imageData = this.getDefaultImageData();
+    this.margin = 5;
+    this.hoverImageCoords = null;
+    this.lastComputedSize = null;
+    this.imageTopPadding = 1;
+    this.itcVnImageDataDecoder = new ItcVnImageDataDecoder();
 
     this.on("valueChanged", async (newValue, oldValue) => {
       if (newValue) {
         this.widgetDisplayImage = await iTcVnImageToImage(newValue);
         this.imageData = newValue;
+        this.itcVnImageDataDecoder.update(newValue);
       } else {
         this.clearDisplayImage();
         this.imageData = this.getDefaultImageData();
@@ -34,6 +41,10 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
       !this.widgetDisplayImage.height
     ) {
       return ITcVnImageControlWidget.DEFAULT_SIZE;
+    }
+
+    if (this.lastComputedSize) {
+      return this.lastComputedSize;
     }
 
     return new Float32Array([
@@ -56,22 +67,49 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
     //
   }
 
-  draw(ctx, node, widget_width, y, H) {
-    const margin = 5;
-    const drawWidgetWidth = widget_width - 2 * margin;
-    const drawImageHeight =
-      node.size[1] - 2 * margin - y - this.getMetaHeight();
+  onMouseOver(event, pos, node) {
+    if (!this._imageDrawRect) return;
+    if (!this.value) return;
 
+    const { x, y, width, height } = this._imageDrawRect;
+    const nativeWidth = this.value.imageInfo.nWidth;
+    const nativeHeight = this.value.imageInfo.nHeight;
+
+    const imageX = pos[0] - x;
+    const imageY = pos[1] - y;
+
+    if (imageX >= 0 && imageX <= width && imageY >= 0 && imageY <= height) {
+      const scaleX = nativeWidth / width;
+      const scaleY = nativeHeight / height;
+
+      this.hoverImageCoords = {
+        imgX: Math.floor(imageX * scaleX),
+        imgY: Math.floor(imageY * scaleY),
+        canvasX: pos[0],
+        canvasY: pos[1],
+      };
+    } else {
+      this.hoverImageCoords = null;
+    }
+
+    this.parent?.graph?.setDirtyCanvas(true, false);
+  }
+
+  draw(ctx, node, widget_width, y, H) {
+    const drawWidgetWidth = widget_width - 2 * this.margin;
+    const drawImageHeight =
+      node.size[1] - 2 * this.margin - y - this.getMetaHeight();
+    const drawImageY = y + this.imageTopPadding;
     // draw the background
     ctx.fillStyle = "#303030";
-    ctx.fillRect(margin, y, drawWidgetWidth, drawImageHeight);
+    ctx.fillRect(this.margin, drawImageY, drawWidgetWidth, drawImageHeight);
 
     // create a rectangular clipping path
     ctx.fillStyle = "#353535";
     ctx.beginPath();
     ctx.rect(
-      margin,
-      y,
+      this.margin,
+      drawImageY,
       drawWidgetWidth,
       drawImageHeight + this.getMetaHeight()
     );
@@ -87,8 +125,8 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
     for (var i = 0; i < nRow; ++i) {
       for (var j = 0, col = nCol / 2; j < col; ++j) {
         ctx.rect(
-          2 * j * blockWidth + (i % 2 ? 0 : blockWidth) + margin,
-          i * blockHeight + y,
+          2 * j * blockWidth + (i % 2 ? 0 : blockWidth) + this.margin,
+          i * blockHeight + drawImageY,
           blockWidth,
           blockHeight
         );
@@ -98,22 +136,33 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
 
     // draw the outline
     ctx.strokeStyle = this.outline_color;
-    ctx.strokeRect(margin, y, drawWidgetWidth, drawImageHeight);
+    ctx.strokeRect(this.margin, drawImageY, drawWidgetWidth, drawImageHeight);
 
     // draw the no image text
     if (this.widgetDisplayImage.src == "") {
       ctx.textAlign = "center";
       ctx.fillStyle = "#FFFFFF"; //this.secondary_text_color;
       ctx.font = "italic 10pt Sans-serif";
-      ctx.fillText("No image", widget_width * 0.5, y + drawImageHeight * 0.5);
+      ctx.fillText(
+        "No image",
+        widget_width * 0.5,
+        drawImageY + drawImageHeight * 0.5
+      );
       return;
     }
+
+    this._imageDrawRect = {
+      x: this.margin,
+      y: drawImageY,
+      width: drawWidgetWidth,
+      height: drawImageHeight,
+    };
 
     // draw the image
     ctx.drawImage(
       this.widgetDisplayImage,
-      margin,
-      y,
+      this.margin,
+      drawImageY,
       drawWidgetWidth,
       drawImageHeight
     );
@@ -122,7 +171,7 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
     const metadataLines = this.getMetaLines();
 
     // Calculate metadata box position
-    const metadataY = y + drawImageHeight + margin; // Position below image
+    const metadataY = drawImageY + drawImageHeight + this.margin; // Position below image
     const metadataHeight = this.getMetaHeight();
     const metadataWidth = drawWidgetWidth;
 
@@ -132,11 +181,93 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
 
-    const textX = margin + 6;
+    const textX = this.margin + 6;
     const textY = metadataY + 6;
     metadataLines.forEach((line, index) => {
       ctx.fillText(line, textX, textY + index * 16);
     });
+
+    if (this.hoverImageCoords && this._imageDrawRect) {
+      const { imgX, imgY, canvasX, canvasY } = this.hoverImageCoords;
+      const pixel = this.itcVnImageDataDecoder?.getPixel(imgX, imgY);
+
+      const labelLines = [`📐 (${imgX}, ${imgY})`];
+
+      if (pixel && Array.isArray(pixel)) {
+        const emojiMapByLength = {
+          1: ["🔲"],
+          2: ["🔲", "🔳"],
+          3: ["🔴", "🟢", "🔵"],
+          4: ["🔴", "🟢", "🔵", "🔳"],
+        };
+
+        const emojis = emojiMapByLength[pixel.length] || [];
+
+        for (let i = 0; i < pixel.length; i++) {
+          const emoji = emojis[i] || `Ch${i + 1}`;
+          labelLines.push(`${emoji}: ${pixel[i]}`);
+        }
+      } else {
+        labelLines.push(`[?]`);
+      }
+
+      // --- Text & layout ---
+      ctx.font = "10pt Sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+
+      const padding = 4;
+      const textWidth = Math.max(
+        ...labelLines.map((line) => ctx.measureText(line).width)
+      );
+      const tooltipWidth = textWidth + padding * 2;
+      const tooltipHeight = labelLines.length * 16 + padding * 2;
+
+      // --- Start from default position (bottom-right) ---
+      const offsetX = 12;
+      const offsetY = 12;
+      let tooltipX = canvasX + offsetX;
+      let tooltipY = canvasY + offsetY;
+
+      // --- Conditionally flip if out of bounds ---
+      if (tooltipX + tooltipWidth > node.size[0]) {
+        tooltipX = canvasX - tooltipWidth - offsetX;
+      }
+      if (tooltipY + tooltipHeight > node.size[1]) {
+        tooltipY = canvasY - tooltipHeight - offsetY;
+      }
+
+      // --- Clamp to edge (just in case) ---
+      tooltipX = Math.max(
+        2,
+        Math.min(tooltipX, node.size[0] - tooltipWidth - 2)
+      );
+      tooltipY = Math.max(
+        2,
+        Math.min(tooltipY, node.size[1] - tooltipHeight - 2)
+      );
+
+      // --- Draw background ---
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.strokeStyle = "#FFFFFF";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      // --- Draw text ---
+      ctx.fillStyle = "#FFFFFF";
+      labelLines.forEach((line, i) => {
+        ctx.fillText(line, tooltipX + padding, tooltipY + padding + i * 16);
+      });
+    }
+
+    const totalHeight =
+      2 * this.margin + drawImageHeight + metadataHeight + drawImageY;
+    const totalWidth = widget_width;
+
+    this.lastComputedSize = new Float32Array([totalWidth, totalHeight]);
   }
 
   getDefaultImageData() {
@@ -175,6 +306,11 @@ export class ITcVnImageControlWidget extends ControlWidget {
     this.widgetDisplayImage = new Image();
     this.droppedImageSize = ITcVnImageControlWidget.DEFAULT_SIZE;
     this.value = this.getDefaultImageData();
+    this.margin = 5;
+    this.hoverImageCoords = null;
+    this.lastComputedSize = null;
+    this.imageTopPadding = 1;
+    this.itcVnImageDataDecoder = new ItcVnImageDataDecoder();
 
     this.FILE_HANDLERS = {
       "image/jpeg": (url) => jpegUrlToITcVnImage(url),
@@ -186,6 +322,7 @@ export class ITcVnImageControlWidget extends ControlWidget {
     this.on("valueChanged", async (newValue, oldValue) => {
       if (newValue) {
         this.widgetDisplayImage = await iTcVnImageToImage(newValue);
+        this.itcVnImageDataDecoder.update(newValue);
         this.parent.setDirtyCanvas(true, true);
       } else {
         this.clearDisplayImage();
@@ -206,6 +343,10 @@ export class ITcVnImageControlWidget extends ControlWidget {
       return ITcVnImageControlWidget.DEFAULT_SIZE;
     }
 
+    if (this.lastComputedSize) {
+      return this.lastComputedSize;
+    }
+
     return new Float32Array([
       this.droppedImageSize[0],
       this.droppedImageSize[1] + this.getMetaHeight(),
@@ -214,6 +355,34 @@ export class ITcVnImageControlWidget extends ControlWidget {
 
   mouse(event, pos, node) {
     // Mouse interaction handling
+  }
+
+  onMouseOver(event, pos, node) {
+    if (!this._imageDrawRect) return;
+    if (!this.value) return;
+
+    const { x, y, width, height } = this._imageDrawRect;
+    const nativeWidth = this.value.imageInfo.nWidth;
+    const nativeHeight = this.value.imageInfo.nHeight;
+
+    const imageX = pos[0] - x;
+    const imageY = pos[1] - y;
+
+    if (imageX >= 0 && imageX <= width && imageY >= 0 && imageY <= height) {
+      const scaleX = nativeWidth / width;
+      const scaleY = nativeHeight / height;
+
+      this.hoverImageCoords = {
+        imgX: Math.floor(imageX * scaleX),
+        imgY: Math.floor(imageY * scaleY),
+        canvasX: pos[0],
+        canvasY: pos[1],
+      };
+    } else {
+      this.hoverImageCoords = null;
+    }
+
+    this.parent?.graph?.setDirtyCanvas(true, false);
   }
 
   getMetaLines() {
@@ -227,12 +396,12 @@ export class ITcVnImageControlWidget extends ControlWidget {
   }
 
   draw(ctx, node, widget_width, y, H) {
-    const margin = 5;
-    const drawWidgetWidth = widget_width - 2 * margin;
+    const drawWidgetWidth = widget_width - 2 * this.margin;
     const drawImageHeight =
-      node.size[1] - 2 * margin - y - this.getMetaHeight();
+      node.size[1] - 2 * this.margin - y - this.getMetaHeight();
+    const drawImageY = y + this.imageTopPadding;
 
-    this.drawImageBackground(ctx, margin, y, drawWidgetWidth, drawImageHeight);
+    this.drawImageBackground(ctx, drawImageY, drawWidgetWidth, drawImageHeight);
 
     if (this.widgetDisplayImage.src == "") {
       ctx.textAlign = "center";
@@ -241,16 +410,23 @@ export class ITcVnImageControlWidget extends ControlWidget {
       ctx.fillText(
         "Drag image here",
         widget_width * 0.5,
-        y + drawImageHeight * 0.5
+        drawImageY + drawImageHeight * 0.5
       );
       return;
     }
 
+    this._imageDrawRect = {
+      x: this.margin,
+      y: drawImageY,
+      width: drawWidgetWidth,
+      height: drawImageHeight,
+    };
+
     // Draw the main image
     ctx.drawImage(
       this.widgetDisplayImage,
-      margin,
-      y,
+      this.margin,
+      drawImageY,
       drawWidgetWidth,
       drawImageHeight
     );
@@ -259,7 +435,7 @@ export class ITcVnImageControlWidget extends ControlWidget {
     const metadataLines = this.getMetaLines();
 
     // Calculate metadata box position
-    const metadataY = y + drawImageHeight + margin; // Position below image
+    const metadataY = drawImageY + drawImageHeight + this.margin;
     const metadataHeight = this.getMetaHeight();
     const metadataWidth = drawWidgetWidth;
 
@@ -269,18 +445,100 @@ export class ITcVnImageControlWidget extends ControlWidget {
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
 
-    const textX = margin + 6;
+    const textX = this.margin + 6;
     const textY = metadataY + 6;
     metadataLines.forEach((line, index) => {
       ctx.fillText(line, textX, textY + index * 16);
     });
+
+    if (this.hoverImageCoords && this._imageDrawRect) {
+      const { imgX, imgY, canvasX, canvasY } = this.hoverImageCoords;
+      const pixel = this.itcVnImageDataDecoder?.getPixel(imgX, imgY);
+
+      const labelLines = [`📐 (${imgX}, ${imgY})`];
+
+      if (pixel && Array.isArray(pixel)) {
+        const emojiMapByLength = {
+          1: ["🔲"],
+          2: ["🔲", "🔳"],
+          3: ["🔴", "🟢", "🔵"],
+          4: ["🔴", "🟢", "🔵", "🔳"],
+        };
+
+        const emojis = emojiMapByLength[pixel.length] || [];
+
+        for (let i = 0; i < pixel.length; i++) {
+          const emoji = emojis[i] || `Ch${i + 1}`;
+          labelLines.push(`${emoji}: ${pixel[i]}`);
+        }
+      } else {
+        labelLines.push(`[?]`);
+      }
+
+      // --- Text & layout ---
+      ctx.font = "10pt Sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+
+      const padding = 4;
+      const textWidth = Math.max(
+        ...labelLines.map((line) => ctx.measureText(line).width)
+      );
+      const tooltipWidth = textWidth + padding * 2;
+      const tooltipHeight = labelLines.length * 16 + padding * 2;
+
+      // --- Start from default position (bottom-right) ---
+      const offsetX = 12;
+      const offsetY = 12;
+      let tooltipX = canvasX + offsetX;
+      let tooltipY = canvasY + offsetY;
+
+      // --- Conditionally flip if out of bounds ---
+      if (tooltipX + tooltipWidth > node.size[0]) {
+        tooltipX = canvasX - tooltipWidth - offsetX;
+      }
+      if (tooltipY + tooltipHeight > node.size[1]) {
+        tooltipY = canvasY - tooltipHeight - offsetY;
+      }
+
+      // --- Clamp to edge (just in case) ---
+      tooltipX = Math.max(
+        2,
+        Math.min(tooltipX, node.size[0] - tooltipWidth - 2)
+      );
+      tooltipY = Math.max(
+        2,
+        Math.min(tooltipY, node.size[1] - tooltipHeight - 2)
+      );
+
+      // --- Draw background ---
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.strokeStyle = "#FFFFFF";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      // --- Draw text ---
+      ctx.fillStyle = "#FFFFFF";
+      labelLines.forEach((line, i) => {
+        ctx.fillText(line, tooltipX + padding, tooltipY + padding + i * 16);
+      });
+    }
+
+    const totalHeight =
+      2 * this.margin + drawImageHeight + metadataHeight + drawImageY;
+    const totalWidth = widget_width;
+
+    this.lastComputedSize = new Float32Array([totalWidth, totalHeight]);
   }
 
-  drawImageBackground(ctx, margin, y, width, height) {
+  drawImageBackground(ctx, y, width, height) {
     ctx.strokeStyle = ITcVnImageControlWidget.OUTLINE_COLOR;
     ctx.fillStyle = ITcVnImageControlWidget.BACKGROUND_COLOR;
-    ctx.fillRect(margin, y, width, height);
-    ctx.strokeRect(margin, y, width, height);
+    ctx.fillRect(this.margin, y, width, height);
+    ctx.strokeRect(this.margin, y, width, height);
   }
 
   drawMetaBackground(ctx, x, y, width, height) {
