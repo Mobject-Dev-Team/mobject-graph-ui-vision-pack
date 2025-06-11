@@ -8840,6 +8840,8 @@
       this.itcVnImageDataDecoder = new ItcVnImageDataDecoder();
       this._imageDrawRect = null;
       this._loadToken = 0;
+      this.dragStart = null;
+      this.dragCurrent = null;
     }
 
     async setImageData(newValue) {
@@ -8895,6 +8897,64 @@
       return this.getMetaLines().length * 16 + 8;
     }
 
+    onMouse(event, pos, node) {
+      if (!this._imageDrawRect) return;
+      const { x, y, width, height } = this._imageDrawRect;
+
+      let canvasX = pos[0],
+        canvasY = pos[1];
+
+      canvasX = this.clamp(canvasX, x, x + width);
+      canvasY = this.clamp(canvasY, y, y + height);
+
+      const imageX = canvasX - x;
+      const imageY = canvasY - y;
+
+      const inside =
+        imageX >= 0 && imageX <= width && imageY >= 0 && imageY <= height;
+      const scaleX = this.imageData.imageInfo.nWidth / width;
+      const scaleY = this.imageData.imageInfo.nHeight / height;
+
+      switch (event.type) {
+        case "pointerdown":
+          console.log("onMouse pointerdown", event, pos, node, this.imageData);
+          if (inside) {
+            console.log("mousedown inside", imageX, imageY, scaleX, scaleY);
+            this.dragStart = {
+              imgX: Math.floor(imageX * scaleX),
+              imgY: Math.floor(imageY * scaleY),
+              canvasX,
+              canvasY,
+            };
+            this.dragCurrent = { ...this.dragStart };
+          }
+          break;
+        case "pointermove":
+          if (this.dragStart) {
+            this.dragCurrent = {
+              imgX: Math.floor(imageX * scaleX),
+              imgY: Math.floor(imageY * scaleY),
+              canvasX,
+              canvasY,
+            };
+          }
+          break;
+        case "pointerup":
+          if (this.dragStart) {
+            this.dragCurrent = {
+              imgX: Math.floor(imageX * scaleX),
+              imgY: Math.floor(imageY * scaleY),
+              canvasX,
+              canvasY,
+            };
+
+            this.dragStart = null;
+            this.dragCurrent = null;
+          }
+          break;
+      }
+    }
+
     onMouseOver(_, pos, __, value) {
       if (!this._imageDrawRect || !value) return;
 
@@ -8917,6 +8977,10 @@
       } else {
         this.hoverImageCoords = null;
       }
+    }
+
+    clamp(val, min, max) {
+      return Math.max(min, Math.min(max, val));
     }
 
     draw(ctx, node, widget_width, y, H, opts = {}) {
@@ -8985,7 +9049,22 @@
         drawImageHeight
       );
 
-      if (this.hoverImageCoords && this._imageDrawRect) {
+      if (this.dragStart && this.dragCurrent && this._imageDrawRect) {
+        const { canvasX: x0, canvasY: y0 } = this.dragStart;
+        const { canvasX: x1, canvasY: y1 } = this.dragCurrent;
+        this._drawSelectionMask(ctx, this._imageDrawRect, x0, y0, x1, y1);
+        this._drawSelectionRect(ctx, this._imageDrawRect, x0, y0, x1, y1);
+        this._drawSelectionLabels(
+          ctx,
+          x0,
+          y0,
+          x1,
+          y1,
+          this._imageDrawRect,
+          this.imageData.imageInfo
+        );
+        this._drawDiagonalLabel(ctx, x0, y0, x1, y1);
+      } else if (this.hoverImageCoords && this._imageDrawRect) {
         this._drawHoverTooltip(ctx, node, metaFont);
       }
 
@@ -8993,6 +9072,137 @@
         2 * this.margin + drawImageHeight + this.getMetaHeight() + drawImageY;
       const totalWidth = widget_width;
       this.lastComputedSize = new Float32Array([totalWidth, totalHeight]);
+    }
+
+    _drawSelectionRect(ctx, drawRect) {
+      const { canvasX: x0, canvasY: y0 } = this.dragStart;
+      const { canvasX: x1, canvasY: y1 } = this.dragCurrent;
+
+      ctx.save();
+      ctx.strokeStyle = "#0FF";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.restore();
+    }
+
+    _drawDiagonalLabel(ctx, x0, y0, x1, y1) {
+      const mx = (x0 + x1) / 2;
+      const my = (y0 + y1) / 2;
+      const dx = x1 - x0;
+      const dy = y1 - y0;
+      const length = Math.sqrt(dx * dx + dy * dy).toFixed(1);
+
+      // Draw the diagonal line
+      ctx.save();
+      ctx.strokeStyle = "#0FF";
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+
+      // Draw the label
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1.0;
+      this._drawTextBox(ctx, `${length}px`, mx, my);
+
+      ctx.restore();
+    }
+
+    _drawSelectionMask(ctx, drawRect, x0, y0, x1, y1) {
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.25)";
+      // The selection box, normalized
+      const left = Math.min(x0, x1),
+        right = Math.max(x0, x1);
+      const top = Math.min(y0, y1),
+        bottom = Math.max(y0, y1);
+
+      // Top
+      ctx.fillRect(drawRect.x, drawRect.y, drawRect.width, top - drawRect.y);
+      // Bottom
+      ctx.fillRect(
+        drawRect.x,
+        bottom,
+        drawRect.width,
+        drawRect.y + drawRect.height - bottom
+      );
+      // Left
+      ctx.fillRect(drawRect.x, top, left - drawRect.x, bottom - top);
+      // Right
+      ctx.fillRect(right, top, drawRect.x + drawRect.width - right, bottom - top);
+      ctx.restore();
+    }
+
+    _drawTextBox(ctx, text, x, y, opts = {}) {
+      ctx.save();
+      ctx.font = opts.font || "bold 12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const padding = opts.padding || 4;
+      const metrics = ctx.measureText(text);
+      const w = metrics.width + padding * 2;
+      const h = 18;
+      ctx.fillStyle = opts.bg || "rgba(0,0,0,0.7)";
+      ctx.fillRect(x - w / 2, y - h / 2, w, h);
+      ctx.strokeStyle = opts.border || "#0FF";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - w / 2, y - h / 2, w, h);
+      ctx.fillStyle = opts.fg || "#0FF";
+      ctx.fillText(text, x, y);
+      ctx.restore();
+    }
+
+    _drawSelectionLabels(ctx, x0, y0, x1, y1, drawRect, imageInfo) {
+      // Convert canvas coords to image coords
+      const { x, y, width, height } = drawRect;
+      const nativeWidth = imageInfo.nWidth;
+      const nativeHeight = imageInfo.nHeight;
+      const scaleX = nativeWidth / width;
+      const scaleY = nativeHeight / height;
+
+      function toImageCoords(cx, cy) {
+        return [Math.floor((cx - x) * scaleX), Math.floor((cy - y) * scaleY)];
+      }
+
+      const [minImgX, minImgY] = toImageCoords(
+        Math.min(x0, x1),
+        Math.min(y0, y1)
+      );
+      const [maxImgX, maxImgY] = toImageCoords(
+        Math.max(x0, x1),
+        Math.max(y0, y1)
+      );
+
+      // Labels for corners (in image space)
+      this._drawTextBox(
+        ctx,
+        `(${minImgX}, ${minImgY})`,
+        Math.min(x0, x1),
+        Math.min(y0, y1) - 15
+      );
+      this._drawTextBox(
+        ctx,
+        `(${maxImgX}, ${maxImgY})`,
+        Math.max(x0, x1),
+        Math.max(y0, y1) + 15
+      );
+
+      // Width label (in image pixels)
+      const widthPx = Math.abs(maxImgX - minImgX) + 1;
+      const midTopX = (x0 + x1) / 2;
+      this._drawTextBox(ctx, `${widthPx}px`, midTopX, Math.min(y0, y1));
+
+      // Height label (in image pixels)
+      const heightPx = Math.abs(maxImgY - minImgY) + 1;
+      const midLeftY = (y0 + y1) / 2;
+      this._drawTextBox(ctx, `${heightPx}px`, Math.max(x0, x1), midLeftY, {
+        font: "bold 12px sans-serif",
+        fg: "#0FF",
+        bg: "rgba(0,0,0,0.7)",
+        padding: 3,
+      });
     }
 
     _drawBackgroundAndCheckerboard(ctx, width, y, height) {
@@ -9051,8 +9261,7 @@
     _drawHoverTooltip(ctx, node, font) {
       const { imgX, imgY, canvasX, canvasY } = this.hoverImageCoords;
       const pixel = this.itcVnImageDataDecoder?.getPixel(imgX, imgY);
-      const labelLines = [`📐 ${imgX}, ${imgY}`];
-
+      let labelLines = [`📐 ${imgX}, ${imgY}`];
       if (pixel && Array.isArray(pixel)) {
         const emojiMapByLength = {
           1: ["🔲"],
@@ -9129,6 +9338,10 @@
       return this.imageDisplay.computeSize(100, 100);
     }
 
+    mouse(event, pos, node) {
+      this.imageDisplay.onMouse(event, pos, node, this.value);
+    }
+
     onMouseOver(event, pos, node) {
       this.imageDisplay.onMouseOver(event, pos, node, this.value);
       this.parent?.graph?.setDirtyCanvas(true, false);
@@ -9171,6 +9384,10 @@
         this.droppedImageSize[0],
         this.droppedImageSize[1]
       );
+    }
+
+    mouse(event, pos, node) {
+      this.imageDisplay.onMouse(event, pos, node, this.value);
     }
 
     onMouseOver(event, pos, node) {

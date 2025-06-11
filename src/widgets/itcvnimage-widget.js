@@ -19,6 +19,10 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
     return this.imageDisplay.computeSize(100, 100);
   }
 
+  mouse(event, pos, node) {
+    this.imageDisplay.onMouse(event, pos, node, this.value);
+  }
+
   onMouseOver(event, pos, node) {
     this.imageDisplay.onMouseOver(event, pos, node, this.value);
     this.parent?.graph?.setDirtyCanvas(true, false);
@@ -61,6 +65,10 @@ export class ITcVnImageControlWidget extends ControlWidget {
       this.droppedImageSize[0],
       this.droppedImageSize[1]
     );
+  }
+
+  mouse(event, pos, node) {
+    this.imageDisplay.onMouse(event, pos, node, this.value);
   }
 
   onMouseOver(event, pos, node) {
