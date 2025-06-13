@@ -1,5 +1,4 @@
 import { DisplayWidget, ControlWidget } from "mobject-graph-ui";
-
 import { jpegUrlToITcVnImage } from "../utils/image-converters/jpeg-conversion.js";
 import { pngUrlToITcVnImage } from "../utils/image-converters/png-conversion.js";
 import { bmpUrlToITcVnImage } from "../utils/image-converters/bmp-conversion.js";
@@ -7,6 +6,8 @@ import { tiffUrlToITcVnImage } from "../utils/image-converters/tiff-conversion.j
 import { ImageDisplayComponent } from "../components/image-display-component.js";
 
 export class ITcVnImageDisplayWidget extends DisplayWidget {
+  static DEFAULT_SIZE = new Float32Array([300, 300]);
+
   constructor(name, parent, options) {
     super(name, parent, options);
     this.imageDisplay = new ImageDisplayComponent({});
@@ -16,31 +17,37 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
   }
 
   computeSize() {
-    return this.imageDisplay.computeSize(100, 100);
+    return this.imageDisplay.computeSize(
+      ITcVnImageDisplayWidget.DEFAULT_SIZE[0],
+      ITcVnImageDisplayWidget.DEFAULT_SIZE[1]
+    );
   }
 
-  mouse(event, pos, node) {
-    this.imageDisplay.onMouse(event, pos, node, this.value);
+  mouse(event, pos, parentNode) {
+    this.imageDisplay.onMouse(event, pos, parentNode, this.value);
   }
 
-  onMouseOver(event, pos, node) {
-    this.imageDisplay.onMouseOver(event, pos, node, this.value);
+  onMouseOver(event, pos, parentNode) {
+    this.imageDisplay.onMouseOver(event, pos, parentNode, this.value);
     this.parent?.graph?.setDirtyCanvas(true, false);
   }
 
-  draw(ctx, node, widget_width, y, H) {
-    this.imageDisplay.draw(ctx, node, widget_width, y, H, {
-      showEmptyText: "No image",
-      outline_color: "#000",
-    });
+  draw(ctx, parentNode, availableWidth, startY, suggestedHeight) {
+    this.imageDisplay.draw(
+      ctx,
+      parentNode,
+      availableWidth,
+      startY,
+      suggestedHeight,
+      {
+        placeholderText: "No image",
+      }
+    );
   }
 }
 
 export class ITcVnImageControlWidget extends ControlWidget {
-  static DEFAULT_SIZE = new Float32Array([100, 100]);
-  static OUTLINE_COLOR = "#000";
-  static BACKGROUND_COLOR = "#303030";
-  static TEXT_COLOR = "#FFF";
+  static DEFAULT_SIZE = new Float32Array([300, 300]);
 
   constructor(name, property, parameter, content) {
     super(name, property, parameter, content);
@@ -76,11 +83,17 @@ export class ITcVnImageControlWidget extends ControlWidget {
     this.parent?.graph?.setDirtyCanvas(true, false);
   }
 
-  draw(ctx, node, widget_width, y, H) {
-    this.imageDisplay.draw(ctx, node, widget_width, y, H, {
-      showEmptyText: "Drag image here",
-      outline_color: ITcVnImageControlWidget.OUTLINE_COLOR,
-    });
+  draw(ctx, parentNode, availableWidth, startY, suggestedHeight) {
+    this.imageDisplay.draw(
+      ctx,
+      parentNode,
+      availableWidth,
+      startY,
+      suggestedHeight,
+      {
+        placeholderText: "Drag image here",
+      }
+    );
   }
 
   async onDropFile(file) {
@@ -90,7 +103,7 @@ export class ITcVnImageControlWidget extends ControlWidget {
         const itcVnImageData = await this.FILE_HANDLERS[fileType](file);
         this.value = itcVnImageData;
         await this.imageDisplay.setImageData(itcVnImageData);
-        this.updateDroppedImageSize(this.imageDisplay.widgetDisplayImage);
+        this.updateDroppedImageSize(this.imageDisplay.displayImage);
       } catch (error) {
         console.error(`Error processing the file: ${error}`);
       }

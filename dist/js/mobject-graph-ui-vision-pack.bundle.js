@@ -8604,6 +8604,434 @@
     return btoa(result);
   }
 
+  /**
+   * Draws a selection box (with mask, border, labels, diagonal) using theme or overrides.
+   */
+  class UiVisionDraw {
+    /**
+     * Draws the full selection overlay.
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {object} selectionStart - {canvasX, canvasY}
+     * @param {object} selectionEnd - {canvasX, canvasY}
+     * @param {object} drawArea - {x, y, width, height}
+     * @param {object} imageInfo - {nWidth, nHeight}
+     * @param {object} options - optional per-call overrides for style/theme
+     */
+    static drawSelectionBox(
+      ctx,
+      selectionStart,
+      selectionEnd,
+      drawArea,
+      imageInfo,
+      {
+        // Defaults from theme, can be overridden per-call
+        border = mobjectGraphUi.UiTheme.selection.border,
+        borderWidth = mobjectGraphUi.UiTheme.selection.lineWidth,
+        borderDash = mobjectGraphUi.UiTheme.selection.dashed,
+        fill = mobjectGraphUi.UiTheme.selection.fill,
+        labelFont = mobjectGraphUi.UiTheme.selection.labelFont || mobjectGraphUi.UiTheme.font.bold,
+        labelText = mobjectGraphUi.UiTheme.selection.labelText,
+        labelBg = mobjectGraphUi.UiTheme.selection.labelBg,
+        labelPadding = mobjectGraphUi.UiTheme.selection.labelPadding ?? mobjectGraphUi.UiTheme.box.padding,
+        diagonalDash = mobjectGraphUi.UiTheme.selection.dashed,
+        diagonalWidth = mobjectGraphUi.UiTheme.selection.diagonalLineWidth,
+      } = {}
+    ) {
+      if (!selectionStart || !selectionEnd) return;
+      const { canvasX: x0, canvasY: y0 } = selectionStart;
+      const { canvasX: x1, canvasY: y1 } = selectionEnd;
+
+      // Draw the semi-transparent mask
+      UiVisionDraw._drawSelectionOverlayMask(ctx, drawArea, x0, y0, x1, y1, fill);
+
+      // Draw the dashed rectangle
+      UiVisionDraw._drawSelectionDashedRect(
+        ctx,
+        x0,
+        y0,
+        x1,
+        y1,
+        border,
+        borderWidth,
+        borderDash
+      );
+
+      // Draw the corner/edge labels
+      UiVisionDraw._drawSelectionCornerLabels(
+        ctx,
+        x0,
+        y0,
+        x1,
+        y1,
+        drawArea,
+        imageInfo,
+        labelFont,
+        labelText,
+        labelBg,
+        labelPadding
+      );
+
+      // Draw the diagonal measurement
+      UiVisionDraw._drawSelectionDiagonalMeasurement(
+        ctx,
+        x0,
+        y0,
+        x1,
+        y1,
+        drawArea,
+        imageInfo,
+        diagonalDash,
+        diagonalWidth,
+        border,
+        labelFont,
+        labelText,
+        labelBg,
+        labelPadding
+      );
+    }
+
+    static _drawSelectionDashedRect(
+      ctx,
+      x0,
+      y0,
+      x1,
+      y1,
+      border,
+      borderWidth,
+      borderDash
+    ) {
+      ctx.save();
+      ctx.strokeStyle = border;
+      ctx.lineWidth = borderWidth;
+      ctx.setLineDash(borderDash);
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.restore();
+    }
+
+    static _drawSelectionOverlayMask(ctx, drawRect, x0, y0, x1, y1, fill) {
+      ctx.save();
+      ctx.fillStyle = fill;
+      // The selection box, normalized
+      const left = Math.min(x0, x1),
+        right = Math.max(x0, x1);
+      const top = Math.min(y0, y1),
+        bottom = Math.max(y0, y1);
+
+      // Top
+      ctx.fillRect(drawRect.x, drawRect.y, drawRect.width, top - drawRect.y);
+      // Bottom
+      ctx.fillRect(
+        drawRect.x,
+        bottom,
+        drawRect.width,
+        drawRect.y + drawRect.height - bottom
+      );
+      // Left
+      ctx.fillRect(drawRect.x, top, left - drawRect.x, bottom - top);
+      // Right
+      ctx.fillRect(right, top, drawRect.x + drawRect.width - right, bottom - top);
+      ctx.restore();
+    }
+
+    static _drawSelectionCornerLabels(
+      ctx,
+      x0,
+      y0,
+      x1,
+      y1,
+      drawRect,
+      imageInfo,
+      font,
+      fg,
+      bg,
+      padding
+    ) {
+      const { x, y, width, height } = drawRect;
+      const nativeWidth = imageInfo.nWidth;
+      const nativeHeight = imageInfo.nHeight;
+      const scaleX = nativeWidth / width;
+      const scaleY = nativeHeight / height;
+
+      const toImageCoords = (cx, cy) => [
+        Math.min(nativeWidth - 1, Math.floor((cx - x) * scaleX)),
+        Math.min(nativeHeight - 1, Math.floor((cy - y) * scaleY)),
+      ];
+
+      const [imgX0, imgY0] = toImageCoords(x0, y0);
+      const [imgX1, imgY1] = toImageCoords(x1, y1);
+
+      // Label for initial point (top of the selection)
+      mobjectGraphUi.UiDraw.drawTextBox(ctx, `(${imgX0}, ${imgY0})`, x0, y0 - 15, {
+        font,
+        fg,
+        bg,
+        padding,
+      });
+
+      // Label for final point (bottom of the selection)
+      mobjectGraphUi.UiDraw.drawTextBox(ctx, `(${imgX1}, ${imgY1})`, x1, y1 + 15, {
+        font,
+        fg,
+        bg,
+        padding,
+      });
+
+      // Width label in image space
+      const widthPx = Math.abs(imgX1 - imgX0) + 1;
+      const midTopX = (x0 + x1) / 2;
+      mobjectGraphUi.UiDraw.drawTextBox(ctx, `${widthPx}px`, midTopX, Math.min(y0, y1), {
+        font,
+        fg,
+        bg,
+        padding,
+      });
+
+      // Height label in image space
+      const heightPx = Math.abs(imgY1 - imgY0) + 1;
+      const midLeftY = (y0 + y1) / 2;
+      mobjectGraphUi.UiDraw.drawTextBox(ctx, `${heightPx}px`, Math.max(x0, x1), midLeftY, {
+        font,
+        fg,
+        bg,
+        padding,
+      });
+    }
+
+    static _drawSelectionDiagonalMeasurement(
+      ctx,
+      x0,
+      y0,
+      x1,
+      y1,
+      drawRect,
+      imageInfo,
+      dash,
+      width,
+      border,
+      font,
+      fg,
+      bg,
+      padding
+    ) {
+      const { x, y, w, h } = drawRect;
+      const nativeWidth = imageInfo.nWidth;
+      const nativeHeight = imageInfo.nHeight;
+      const scaleX = nativeWidth / drawRect.width;
+      const scaleY = nativeHeight / drawRect.height;
+
+      const toImageCoords = (cx, cy) => [
+        Math.min(nativeWidth - 1, Math.floor((cx - x) * scaleX)),
+        Math.min(nativeHeight - 1, Math.floor((cy - y) * scaleY)),
+      ];
+
+      const [imgX0, imgY0] = toImageCoords(x0, y0);
+      const [imgX1, imgY1] = toImageCoords(x1, y1);
+
+      const dx = Math.abs(imgX1 - imgX0) + 1;
+      const dy = Math.abs(imgY1 - imgY0) + 1;
+      const length = Math.sqrt(dx * dx + dy * dy).toFixed(2);
+
+      const mx = (x0 + x1) / 2;
+      const my = (y0 + y1) / 2;
+
+      ctx.save();
+      ctx.strokeStyle = border;
+      ctx.lineWidth = width;
+      ctx.setLineDash(dash);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1.0;
+
+      mobjectGraphUi.UiDraw.drawTextBox(ctx, `${length}px`, mx, my, {
+        font,
+        fg,
+        bg,
+        padding,
+      });
+      ctx.restore();
+    }
+
+    static drawCheckerboardBackground(
+      ctx,
+      x,
+      y,
+      width,
+      height,
+      {
+        blockSize = mobjectGraphUi.UiTheme.checkerboard.size,
+        dark = mobjectGraphUi.UiTheme.checkerboard.dark,
+        light = mobjectGraphUi.UiTheme.checkerboard.light,
+      } = {}
+    ) {
+      ctx.fillStyle = dark;
+      ctx.fillRect(x, y, width, height);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, width, height);
+      ctx.clip();
+
+      const blocksY = Math.ceil(height / blockSize);
+      const blocksX = Math.ceil(width / blockSize);
+
+      for (let i = 0; i < blocksY; ++i) {
+        for (let j = 0; j < blocksX; ++j) {
+          if ((i + j) % 2 === 0) {
+            const bx = x + j * blockSize;
+            const by = y + i * blockSize;
+            const w = Math.min(blockSize, width - (bx - x));
+            const h = Math.min(blockSize, height - (by - y));
+            ctx.fillStyle = light;
+            ctx.fillRect(bx, by, w, h);
+          }
+        }
+      }
+      ctx.restore();
+    }
+
+    static drawImageBorder(
+      ctx,
+      x,
+      y,
+      width,
+      height,
+      { color = mobjectGraphUi.UiTheme.box.border, borderWidth = 1 } = {}
+    ) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = borderWidth;
+      ctx.strokeRect(x, y, width, height);
+      ctx.restore();
+    }
+
+    static drawPlaceholderText(
+      ctx,
+      text,
+      x,
+      y,
+      width,
+      height,
+      {
+        font = mobjectGraphUi.UiTheme.font.italic || "italic 10pt Sans-serif",
+        color = mobjectGraphUi.UiTheme.text.disabled,
+      } = {}
+    ) {
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.fillStyle = color;
+      ctx.font = font;
+      ctx.fillText(text, x + width * 0.5, y + height * 0.5);
+      ctx.restore();
+    }
+
+    static drawImagePanel(
+      ctx,
+      image,
+      x,
+      y,
+      width,
+      height,
+      {
+        theme = mobjectGraphUi.UiTheme,
+        placeholderText = "No image",
+        borderColor = theme.box.border,
+        borderWidth = 1,
+        checkerDark = theme.checkerboard.dark,
+        checkerLight = theme.checkerboard.light,
+        checkerSize = theme.checkerboard.size,
+        placeholderFont = theme.font.italic || "italic 12px sans-serif",
+        placeholderColor = theme.text.disabled,
+      } = {}
+    ) {
+      // Checkerboard background
+      UiVisionDraw.drawCheckerboardBackground(ctx, x, y, width, height, {
+        dark: checkerDark,
+        light: checkerLight,
+        blockSize: checkerSize,
+      });
+
+      // Border
+      UiVisionDraw.drawImageBorder(ctx, x, y, width, height, {
+        color: borderColor,
+        borderWidth,
+      });
+
+      // Placeholder (if no image)
+      if (!image || !image.src) {
+        UiVisionDraw.drawPlaceholderText(
+          ctx,
+          placeholderText,
+          x,
+          y,
+          width,
+          height,
+          {
+            font: placeholderFont,
+            color: placeholderColor,
+          }
+        );
+        return false; // No image drawn
+      }
+
+      // Draw the actual image
+      ctx.drawImage(image, x, y, width, height);
+      return true; // Image drawn
+    }
+
+    static drawMetaInfoBox(
+      ctx,
+      metaLines,
+      x,
+      y,
+      maxWidth,
+      {
+        font = mobjectGraphUi.UiTheme.font.normal,
+        color = mobjectGraphUi.UiTheme.text.color,
+        lineHeight = 16,
+      } = {}
+    ) {
+      ctx.save();
+      ctx.font = font;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillStyle = color;
+
+      ctx.beginPath();
+      ctx.rect(x, y, maxWidth, metaLines.length * lineHeight);
+      ctx.clip();
+
+      metaLines.forEach((line, i) => {
+        const fittedText = this._truncateToWidth(ctx, line, maxWidth);
+        ctx.fillText(fittedText, x, y + i * lineHeight);
+      });
+
+      ctx.restore();
+    }
+
+    static _truncateToWidth(ctx, text, maxWidth) {
+      if (ctx.measureText(text).width <= maxWidth) return text;
+
+      const ellipsis = "…";
+      let low = 0;
+      let high = text.length;
+
+      while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        const substr = text.slice(0, mid) + ellipsis;
+        if (ctx.measureText(substr).width <= maxWidth) {
+          low = mid + 1;
+        } else {
+          high = mid;
+        }
+      }
+
+      return text.slice(0, low - 1) + ellipsis;
+    }
+  }
+
   async function iTcVnImageToImage(itcvnimage) {
     if (!itcvnimage) {
       throw new Error("Invalid input: Missing itcvnimage data");
@@ -8829,503 +9257,288 @@
       imageData: "",
     };
 
-    constructor({ defaultImageData, margin = 5, imageTopPadding = 1 } = {}) {
+    constructor({ margin = 5, imageTopPadding = 1 } = {}) {
       this.margin = margin;
       this.imageTopPadding = imageTopPadding;
-      this.widgetDisplayImage = new Image();
-      this.imageData =
-        defaultImageData || ImageDisplayComponent.DEFAULT_IMAGE_DATA;
+      this.displayImage = new Image();
+      this.rawImageData = ImageDisplayComponent.DEFAULT_IMAGE_DATA;
       this.hoverImageCoords = null;
-      this.lastComputedSize = null;
+      this.cachedComponentSize = null;
       this.itcVnImageDataDecoder = new ItcVnImageDataDecoder();
-      this._imageDrawRect = null;
-      this._loadToken = 0;
-      this.dragStart = null;
-      this.dragCurrent = null;
+      this.imageDrawArea = null;
+      this.currentLoadId = 0;
+      this.interaction = new CanvasInteractionManager();
     }
 
     async setImageData(newValue) {
-      this.lastComputedSize = null;
+      this.cachedComponentSize = null;
       if (newValue) {
-        const loadToken = ++this._loadToken;
+        const loadId = ++this.currentLoadId;
         const img = await iTcVnImageToImage(newValue);
-        if (loadToken !== this._loadToken) return;
-        this.widgetDisplayImage = img;
-        this.imageData = newValue;
+        if (loadId !== this.currentLoadId) return;
+        this.displayImage = img;
+        this.rawImageData = newValue;
         this.itcVnImageDataDecoder.update(newValue);
       } else {
         this.clearDisplayImage();
-        this.imageData = ImageDisplayComponent.DEFAULT_IMAGE_DATA;
+        this.rawImageData = ImageDisplayComponent.DEFAULT_IMAGE_DATA;
       }
     }
 
     clearDisplayImage() {
-      this.widgetDisplayImage = new Image();
-      this.lastComputedSize = null;
+      this.displayImage = new Image();
+      this.cachedComponentSize = null;
     }
 
-    computeSize(widgetWidth = 100, widgetHeight = 100) {
+    computeSize(widgetWidth = 300, widgetHeight = 300) {
       if (
-        !this.widgetDisplayImage ||
-        !this.widgetDisplayImage.width ||
-        !this.widgetDisplayImage.height
+        !this.displayImage ||
+        !this.displayImage.width ||
+        !this.displayImage.height
       ) {
         return new Float32Array([widgetWidth, widgetHeight]);
       }
-      if (this.lastComputedSize) {
-        return this.lastComputedSize;
+      if (this.cachedComponentSize) {
+        return this.cachedComponentSize;
       }
       const result = new Float32Array([
-        this.widgetDisplayImage.width,
-        this.widgetDisplayImage.height + this.getMetaHeight(),
+        this.displayImage.width,
+        this.displayImage.height + this.getMetaHeight(),
       ]);
-      this.lastComputedSize = result;
+      this.cachedComponentSize = result;
       return result;
     }
 
-    getMetaLines() {
-      const info = this.imageData?.imageInfo || {};
+    getImageMetaText() {
+      const info = this.rawImageData?.imageInfo || {};
       const fmt = info.stPixelFormat || {};
+
+      const line1 = `📐 ${info.nWidth || 0} x ${info.nHeight || 0} px 🌈 ${
+      fmt.nChannels || 0
+    } ch 🎚️ ${fmt.nElementSize || 0} bit`;
+
+      let line2 = "  ";
+      if (this.hoverImageCoords && this.itcVnImageDataDecoder) {
+        const { imgX, imgY } = this.hoverImageCoords;
+        const pixel = this.itcVnImageDataDecoder.getPixel(imgX, imgY);
+
+        if (Array.isArray(pixel)) {
+          const emojiMapByLength = {
+            1: ["⚪"],
+            2: ["⚪", "🔳"],
+            3: ["🔴", "🟢", "🔵"],
+            4: ["🔴", "🟢", "🔵", "🔳"],
+          };
+          const emojis = emojiMapByLength[pixel.length] || [];
+          const values = pixel.map((val, i) => {
+            const emoji = emojis[i] || `Ch${i + 1}`;
+            return `${emoji}${val.toFixed(0).padStart(3)}`;
+          });
+          line2 = `➕ ${imgX.toFixed(0).padStart(3)}, ${imgY
+          .toFixed(0)
+          .padStart(3)} ${values.join(" ")}`;
+        } else {
+          line2 = `➕ ${imgX.toFixed(0).padStart(3)}, ${imgY
+          .toFixed(0)
+          .padStart(3)}`;
+        }
+      }
+
+      return [line1, line2];
+    }
+
+    isPointInDrawArea(canvasX, canvasY) {
+      const area = this.imageDrawArea;
+      if (!area) return false;
+      return (
+        canvasX >= area.x &&
+        canvasX <= area.x + area.width &&
+        canvasY >= area.y &&
+        canvasY <= area.y + area.height
+      );
+    }
+
+    clampToDrawArea(canvasX, canvasY) {
+      const area = this.imageDrawArea;
+      if (!area) return [canvasX, canvasY];
       return [
-        `${info.nWidth || 0}x${info.nHeight || 0}px, ${fmt.nChannels || 0}ch, ${
-        fmt.nElementSize || 0
-      }bit`,
+        mobjectGraphUi.clamp(canvasX, area.x, area.x + area.width),
+        mobjectGraphUi.clamp(canvasY, area.y, area.y + area.height),
       ];
     }
 
-    getMetaHeight() {
-      return this.getMetaLines().length * 16 + 8;
+    toImageCoords(canvasX, canvasY) {
+      const area = this.imageDrawArea;
+      const info = this.rawImageData?.imageInfo;
+      if (!area || !info || !info.nWidth || !info.nHeight) return null;
+      const { x, y, width, height } = area;
+      const scaleX = info.nWidth / width;
+      const scaleY = info.nHeight / height;
+      return [
+        Math.min(
+          info.nWidth - 1,
+          Math.max(0, Math.floor((canvasX - x) * scaleX))
+        ),
+        Math.min(
+          info.nHeight - 1,
+          Math.max(0, Math.floor((canvasY - y) * scaleY))
+        ),
+      ];
     }
 
-    onMouse(event, pos, node) {
-      if (!this._imageDrawRect) return;
-      const { x, y, width, height } = this._imageDrawRect;
+    getImageAndCanvasCoords(pos) {
+      const [canvasX, canvasY] = this.clampToDrawArea(pos[0], pos[1]);
+      const [imgX, imgY] = this.toImageCoords(canvasX, canvasY);
+      return { imgX, imgY, canvasX, canvasY };
+    }
 
-      let canvasX = pos[0],
-        canvasY = pos[1];
-
-      canvasX = this.clamp(canvasX, x, x + width);
-      canvasY = this.clamp(canvasY, y, y + height);
-
-      const imageX = canvasX - x;
-      const imageY = canvasY - y;
-
-      const inside =
-        imageX >= 0 && imageX <= width && imageY >= 0 && imageY <= height;
-      const scaleX = this.imageData.imageInfo.nWidth / width;
-      const scaleY = this.imageData.imageInfo.nHeight / height;
+    onMouse(event, pos, parentNode) {
+      if (!this.imageDrawArea) return;
+      let [canvasX, canvasY] = this.clampToDrawArea(pos[0], pos[1]);
+      const [imgX, imgY] = this.toImageCoords(canvasX, canvasY);
 
       switch (event.type) {
         case "pointerdown":
-          console.log("onMouse pointerdown", event, pos, node, this.imageData);
-          if (inside) {
-            console.log("mousedown inside", imageX, imageY, scaleX, scaleY);
-            this.dragStart = {
-              imgX: Math.floor(imageX * scaleX),
-              imgY: Math.floor(imageY * scaleY),
-              canvasX,
-              canvasY,
-            };
-            this.dragCurrent = { ...this.dragStart };
-          }
+          this.interaction.pointerDown(
+            { canvasX, canvasY },
+            { imgX, imgY },
+            event.button || 0
+          );
           break;
         case "pointermove":
-          if (this.dragStart) {
-            this.dragCurrent = {
-              imgX: Math.floor(imageX * scaleX),
-              imgY: Math.floor(imageY * scaleY),
-              canvasX,
-              canvasY,
-            };
-          }
+          this.interaction.pointerMove({ canvasX, canvasY }, { imgX, imgY });
           break;
         case "pointerup":
-          if (this.dragStart) {
-            this.dragCurrent = {
-              imgX: Math.floor(imageX * scaleX),
-              imgY: Math.floor(imageY * scaleY),
-              canvasX,
-              canvasY,
-            };
-
-            this.dragStart = null;
-            this.dragCurrent = null;
-          }
+          this.interaction.pointerUp({ canvasX, canvasY }, { imgX, imgY });
           break;
       }
     }
 
-    onMouseOver(_, pos, __, value) {
-      if (!this._imageDrawRect || !value) return;
-
-      const { x, y, width, height } = this._imageDrawRect;
-      const nativeWidth = value.imageInfo.nWidth;
-      const nativeHeight = value.imageInfo.nHeight;
-
-      const imageX = pos[0] - x;
-      const imageY = pos[1] - y;
-
-      if (imageX >= 0 && imageX <= width && imageY >= 0 && imageY <= height) {
-        const scaleX = nativeWidth / width;
-        const scaleY = nativeHeight / height;
-        this.hoverImageCoords = {
-          imgX: Math.floor(imageX * scaleX),
-          imgY: Math.floor(imageY * scaleY),
-          canvasX: pos[0],
-          canvasY: pos[1],
-        };
-      } else {
-        this.hoverImageCoords = null;
+    onMouseOver(event, pos, parentNode, value) {
+      if (!this.imageDrawArea || !value) return;
+      const { imgX, imgY, canvasX, canvasY } = this.getImageAndCanvasCoords(pos);
+      if (this.isPointInDrawArea(canvasX, canvasY)) {
+        this.hoverImageCoords = { imgX, imgY, canvasX, canvasY };
       }
     }
+    draw(ctx, parentNode, availableWidth, startY, suggestedHeight, opts = {}) {
+      const { placeholderText = "No image" } = opts;
 
-    clamp(val, min, max) {
-      return Math.max(min, Math.min(max, val));
-    }
+      // Compute meta info
+      const metaLines = this.getImageMetaText();
+      const metaLineHeight = 16;
+      const metaHeight = metaLines.length * metaLineHeight + 8;
 
-    draw(ctx, node, widget_width, y, H, opts = {}) {
-      const {
-        showEmptyText = "No image",
-        metaLines = this.getMetaLines(),
-        image = this.widgetDisplayImage,
-        value = this.imageData,
-        outline_color = "#000",
-        metaTextColor = "#FFF",
-        metaFont = "10pt Sans-serif",
-      } = opts;
-
-      const drawWidgetWidth = widget_width - 2 * this.margin;
+      // Layout
+      const componentWidth = availableWidth - 2 * this.margin;
+      const drawImageY = startY + this.imageTopPadding;
       const drawImageHeight =
-        node.size[1] - 2 * this.margin - y - this.getMetaHeight();
-      const drawImageY = y + this.imageTopPadding;
+        parentNode.height - 2 * this.margin - startY - metaHeight;
 
-      this._drawBackgroundAndCheckerboard(
-        ctx,
-        drawWidgetWidth,
-        drawImageY,
-        drawImageHeight
-      );
-      this._drawImageOutline(
-        ctx,
-        drawWidgetWidth,
-        drawImageY,
-        drawImageHeight,
-        outline_color
-      );
-
-      if (!image.src) {
-        this._drawEmptyText(
-          ctx,
-          widget_width,
-          drawImageY,
-          drawImageHeight,
-          showEmptyText,
-          metaTextColor
-        );
-        return;
-      }
-
-      this._imageDrawRect = {
+      // Save draw area
+      this.imageDrawArea = {
         x: this.margin,
         y: drawImageY,
-        width: drawWidgetWidth,
+        width: componentWidth,
         height: drawImageHeight,
       };
 
-      ctx.drawImage(
+      // Draw background/border/image/placeholder
+      const image = this.displayImage;
+      const imageDrawn = UiVisionDraw.drawImagePanel(
+        ctx,
         image,
         this.margin,
         drawImageY,
-        drawWidgetWidth,
-        drawImageHeight
+        componentWidth,
+        drawImageHeight,
+        { placeholderText }
       );
+      if (!imageDrawn) return;
 
-      this._drawMeta(
+      // Draw meta info (below the image)
+      UiVisionDraw.drawMetaInfoBox(
         ctx,
         metaLines,
-        metaFont,
-        metaTextColor,
-        drawImageY,
-        drawImageHeight
+        this.margin + 6,
+        drawImageY + drawImageHeight + this.margin + 6,
+        componentWidth - 12
       );
 
-      if (this.dragStart && this.dragCurrent && this._imageDrawRect) {
-        const { canvasX: x0, canvasY: y0 } = this.dragStart;
-        const { canvasX: x1, canvasY: y1 } = this.dragCurrent;
-        this._drawSelectionMask(ctx, this._imageDrawRect, x0, y0, x1, y1);
-        this._drawSelectionRect(ctx, this._imageDrawRect, x0, y0, x1, y1);
-        this._drawSelectionLabels(
+      // Draw selection box if we are in select mode
+      if (
+        this.interaction.mode === "select" &&
+        this.interaction.dragStart &&
+        this.interaction.dragEnd &&
+        this.imageDrawArea
+      ) {
+        UiVisionDraw.drawSelectionBox(
           ctx,
-          x0,
-          y0,
-          x1,
-          y1,
-          this._imageDrawRect,
-          this.imageData.imageInfo
+          this.interaction.dragStart,
+          this.interaction.dragEnd,
+          this.imageDrawArea,
+          this.rawImageData.imageInfo
         );
-        this._drawDiagonalLabel(ctx, x0, y0, x1, y1);
-      } else if (this.hoverImageCoords && this._imageDrawRect) {
-        this._drawHoverTooltip(ctx, node, metaFont);
       }
 
+      // Cache the total widget size
       const totalHeight =
-        2 * this.margin + drawImageHeight + this.getMetaHeight() + drawImageY;
-      const totalWidth = widget_width;
-      this.lastComputedSize = new Float32Array([totalWidth, totalHeight]);
+        2 * this.margin + drawImageHeight + metaHeight + drawImageY;
+      const totalWidth = availableWidth;
+      this.cachedComponentSize = new Float32Array([totalWidth, totalHeight]);
+    }
+  }
+
+  class CanvasInteractionManager {
+    constructor() {
+      this.mode = "select"; // "select" | "line" | "rectangle"
+      this.dragStart = null; // { imgX, imgY, canvasX, canvasY }
+      this.dragEnd = null;
     }
 
-    _drawSelectionRect(ctx, drawRect) {
-      const { canvasX: x0, canvasY: y0 } = this.dragStart;
-      const { canvasX: x1, canvasY: y1 } = this.dragCurrent;
-
-      ctx.save();
-      ctx.strokeStyle = "#0FF";
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
-      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-      ctx.restore();
+    setMode(mode) {
+      this.mode = mode;
+      this.cancelCurrentAction();
     }
 
-    _drawDiagonalLabel(ctx, x0, y0, x1, y1) {
-      const mx = (x0 + x1) / 2;
-      const my = (y0 + y1) / 2;
-      const dx = x1 - x0;
-      const dy = y1 - y0;
-      const length = Math.sqrt(dx * dx + dy * dy).toFixed(1);
-
-      // Draw the diagonal line
-      ctx.save();
-      ctx.strokeStyle = "#0FF";
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
-      ctx.stroke();
-
-      // Draw the label
-      ctx.setLineDash([]);
-      ctx.globalAlpha = 1.0;
-      this._drawTextBox(ctx, `${length}px`, mx, my);
-
-      ctx.restore();
-    }
-
-    _drawSelectionMask(ctx, drawRect, x0, y0, x1, y1) {
-      ctx.save();
-      ctx.fillStyle = "rgba(0,0,0,0.25)";
-      // The selection box, normalized
-      const left = Math.min(x0, x1),
-        right = Math.max(x0, x1);
-      const top = Math.min(y0, y1),
-        bottom = Math.max(y0, y1);
-
-      // Top
-      ctx.fillRect(drawRect.x, drawRect.y, drawRect.width, top - drawRect.y);
-      // Bottom
-      ctx.fillRect(
-        drawRect.x,
-        bottom,
-        drawRect.width,
-        drawRect.y + drawRect.height - bottom
-      );
-      // Left
-      ctx.fillRect(drawRect.x, top, left - drawRect.x, bottom - top);
-      // Right
-      ctx.fillRect(right, top, drawRect.x + drawRect.width - right, bottom - top);
-      ctx.restore();
-    }
-
-    _drawTextBox(ctx, text, x, y, opts = {}) {
-      ctx.save();
-      ctx.font = opts.font || "bold 12px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const padding = opts.padding || 4;
-      const metrics = ctx.measureText(text);
-      const w = metrics.width + padding * 2;
-      const h = 18;
-      ctx.fillStyle = opts.bg || "rgba(0,0,0,0.7)";
-      ctx.fillRect(x - w / 2, y - h / 2, w, h);
-      ctx.strokeStyle = opts.border || "#0FF";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x - w / 2, y - h / 2, w, h);
-      ctx.fillStyle = opts.fg || "#0FF";
-      ctx.fillText(text, x, y);
-      ctx.restore();
-    }
-
-    _drawSelectionLabels(ctx, x0, y0, x1, y1, drawRect, imageInfo) {
-      // Convert canvas coords to image coords
-      const { x, y, width, height } = drawRect;
-      const nativeWidth = imageInfo.nWidth;
-      const nativeHeight = imageInfo.nHeight;
-      const scaleX = nativeWidth / width;
-      const scaleY = nativeHeight / height;
-
-      function toImageCoords(cx, cy) {
-        return [Math.floor((cx - x) * scaleX), Math.floor((cy - y) * scaleY)];
+    pointerDown(pos, imageCoords, button = 0) {
+      switch (this.mode) {
+        case "select":
+          this.dragStart = { ...pos, ...imageCoords };
+          this.dragEnd = { ...pos, ...imageCoords };
+          break;
       }
-
-      const [minImgX, minImgY] = toImageCoords(
-        Math.min(x0, x1),
-        Math.min(y0, y1)
-      );
-      const [maxImgX, maxImgY] = toImageCoords(
-        Math.max(x0, x1),
-        Math.max(y0, y1)
-      );
-
-      // Labels for corners (in image space)
-      this._drawTextBox(
-        ctx,
-        `(${minImgX}, ${minImgY})`,
-        Math.min(x0, x1),
-        Math.min(y0, y1) - 15
-      );
-      this._drawTextBox(
-        ctx,
-        `(${maxImgX}, ${maxImgY})`,
-        Math.max(x0, x1),
-        Math.max(y0, y1) + 15
-      );
-
-      // Width label (in image pixels)
-      const widthPx = Math.abs(maxImgX - minImgX) + 1;
-      const midTopX = (x0 + x1) / 2;
-      this._drawTextBox(ctx, `${widthPx}px`, midTopX, Math.min(y0, y1));
-
-      // Height label (in image pixels)
-      const heightPx = Math.abs(maxImgY - minImgY) + 1;
-      const midLeftY = (y0 + y1) / 2;
-      this._drawTextBox(ctx, `${heightPx}px`, Math.max(x0, x1), midLeftY, {
-        font: "bold 12px sans-serif",
-        fg: "#0FF",
-        bg: "rgba(0,0,0,0.7)",
-        padding: 3,
-      });
     }
 
-    _drawBackgroundAndCheckerboard(ctx, width, y, height) {
-      ctx.fillStyle = "#303030";
-      ctx.fillRect(this.margin, y, width, height);
-
-      const blockSize = 10;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(this.margin, y, width, height);
-      ctx.clip();
-
-      const blocksY = Math.ceil(height / blockSize);
-      const blocksX = Math.ceil(width / blockSize);
-
-      for (let i = 0; i < blocksY; ++i) {
-        for (let j = 0; j < blocksX; ++j) {
-          if ((i + j) % 2 === 0) {
-            const x = this.margin + j * blockSize;
-            const yy = y + i * blockSize;
-            const w = Math.min(blockSize, width - (x - this.margin));
-            const h = Math.min(blockSize, height - (yy - y));
-            ctx.fillStyle = "#404040";
-            ctx.fillRect(x, yy, w, h);
-          }
-        }
+    pointerMove(pos, imageCoords) {
+      if (!this.dragStart) return;
+      switch (this.mode) {
+        case "select":
+          this.dragEnd = { ...pos, ...imageCoords };
+          break;
       }
-      ctx.restore();
     }
 
-    _drawImageOutline(ctx, width, y, height, color) {
-      ctx.strokeStyle = color;
-      ctx.strokeRect(this.margin, y, width, height);
-    }
-
-    _drawEmptyText(ctx, widget_width, y, height, text, color) {
-      ctx.textAlign = "center";
-      ctx.fillStyle = color;
-      ctx.font = "italic 10pt Sans-serif";
-      ctx.fillText(text, widget_width * 0.5, y + height * 0.5);
-    }
-
-    _drawMeta(ctx, metaLines, font, color, y, height) {
-      const metadataY = y + height + this.margin;
-      const textX = this.margin + 6;
-      const textY = metadataY + 6;
-      ctx.fillStyle = color;
-      ctx.font = font;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      metaLines.forEach((line, index) => {
-        ctx.fillText(line, textX, textY + index * 16);
-      });
-    }
-
-    _drawHoverTooltip(ctx, node, font) {
-      const { imgX, imgY, canvasX, canvasY } = this.hoverImageCoords;
-      const pixel = this.itcVnImageDataDecoder?.getPixel(imgX, imgY);
-      let labelLines = [`📐 ${imgX}, ${imgY}`];
-      if (pixel && Array.isArray(pixel)) {
-        const emojiMapByLength = {
-          1: ["🔲"],
-          2: ["🔲", "🔳"],
-          3: ["🔴", "🟢", "🔵"],
-          4: ["🔴", "🟢", "🔵", "🔳"],
-        };
-        const emojis = emojiMapByLength[pixel.length] || [];
-        for (let i = 0; i < pixel.length; i++) {
-          const emoji = emojis[i] || `Ch${i + 1}`;
-          labelLines.push(`${emoji} ${pixel[i]}`);
-        }
-      } else {
-        labelLines.push(`[?]`);
+    pointerUp(pos, imageCoords) {
+      if (!this.dragStart) return;
+      switch (this.mode) {
+        case "select":
+          this.dragEnd = { ...pos, ...imageCoords };
+          this.dragStart = null;
+          this.dragEnd = null;
+          break;
       }
+    }
 
-      ctx.font = font;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      const padding = 5;
-      const lineHeight = 20;
-      const textWidth = Math.max(
-        ...labelLines.map((line) => ctx.measureText(line).width)
-      );
-
-      // Add extra width for emoji padding
-      const tooltipWidth = textWidth + padding * 2 + 4;
-      const tooltipHeight = labelLines.length * lineHeight + padding * 2;
-
-      let tooltipX = canvasX + 12;
-      let tooltipY = canvasY + 12;
-      if (tooltipX + tooltipWidth > node.size[0])
-        tooltipX = canvasX - tooltipWidth - 12;
-      if (tooltipY + tooltipHeight > node.size[1])
-        tooltipY = canvasY - tooltipHeight - 12;
-      tooltipX = Math.max(2, Math.min(tooltipX, node.size[0] - tooltipWidth - 2));
-      tooltipY = Math.max(
-        2,
-        Math.min(tooltipY, node.size[1] - tooltipHeight - 2)
-      );
-
-      // Draw background
-      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-      ctx.strokeStyle = "#FFF";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 4);
-      ctx.fill();
-      ctx.stroke();
-
-      // Draw text with vertical centering
-      ctx.fillStyle = "#FFF";
-      const verticalOffset = padding + lineHeight * 0.8;
-      labelLines.forEach((line, i) => {
-        ctx.fillText(
-          line,
-          tooltipX + padding + 2,
-          tooltipY + verticalOffset + i * lineHeight
-        );
-      });
+    cancelCurrentAction() {
+      this.dragStart = null;
+      this.dragEnd = null;
     }
   }
 
   class ITcVnImageDisplayWidget extends mobjectGraphUi.DisplayWidget {
+    static DEFAULT_SIZE = new Float32Array([300, 300]);
+
     constructor(name, parent, options) {
       super(name, parent, options);
       this.imageDisplay = new ImageDisplayComponent({});
@@ -9335,31 +9548,37 @@
     }
 
     computeSize() {
-      return this.imageDisplay.computeSize(100, 100);
+      return this.imageDisplay.computeSize(
+        ITcVnImageDisplayWidget.DEFAULT_SIZE[0],
+        ITcVnImageDisplayWidget.DEFAULT_SIZE[1]
+      );
     }
 
-    mouse(event, pos, node) {
-      this.imageDisplay.onMouse(event, pos, node, this.value);
+    mouse(event, pos, parentNode) {
+      this.imageDisplay.onMouse(event, pos, parentNode, this.value);
     }
 
-    onMouseOver(event, pos, node) {
-      this.imageDisplay.onMouseOver(event, pos, node, this.value);
+    onMouseOver(event, pos, parentNode) {
+      this.imageDisplay.onMouseOver(event, pos, parentNode, this.value);
       this.parent?.graph?.setDirtyCanvas(true, false);
     }
 
-    draw(ctx, node, widget_width, y, H) {
-      this.imageDisplay.draw(ctx, node, widget_width, y, H, {
-        showEmptyText: "No image",
-        outline_color: "#000",
-      });
+    draw(ctx, parentNode, availableWidth, startY, suggestedHeight) {
+      this.imageDisplay.draw(
+        ctx,
+        parentNode,
+        availableWidth,
+        startY,
+        suggestedHeight,
+        {
+          placeholderText: "No image",
+        }
+      );
     }
   }
 
   class ITcVnImageControlWidget extends mobjectGraphUi.ControlWidget {
-    static DEFAULT_SIZE = new Float32Array([100, 100]);
-    static OUTLINE_COLOR = "#000";
-    static BACKGROUND_COLOR = "#303030";
-    static TEXT_COLOR = "#FFF";
+    static DEFAULT_SIZE = new Float32Array([300, 300]);
 
     constructor(name, property, parameter, content) {
       super(name, property, parameter, content);
@@ -9395,11 +9614,17 @@
       this.parent?.graph?.setDirtyCanvas(true, false);
     }
 
-    draw(ctx, node, widget_width, y, H) {
-      this.imageDisplay.draw(ctx, node, widget_width, y, H, {
-        showEmptyText: "Drag image here",
-        outline_color: ITcVnImageControlWidget.OUTLINE_COLOR,
-      });
+    draw(ctx, parentNode, availableWidth, startY, suggestedHeight) {
+      this.imageDisplay.draw(
+        ctx,
+        parentNode,
+        availableWidth,
+        startY,
+        suggestedHeight,
+        {
+          placeholderText: "Drag image here",
+        }
+      );
     }
 
     async onDropFile(file) {
@@ -9409,7 +9634,7 @@
           const itcVnImageData = await this.FILE_HANDLERS[fileType](file);
           this.value = itcVnImageData;
           await this.imageDisplay.setImageData(itcVnImageData);
-          this.updateDroppedImageSize(this.imageDisplay.widgetDisplayImage);
+          this.updateDroppedImageSize(this.imageDisplay.displayImage);
         } catch (error) {
           console.error(`Error processing the file: ${error}`);
         }
