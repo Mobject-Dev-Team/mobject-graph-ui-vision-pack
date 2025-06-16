@@ -48,6 +48,13 @@ export class ImageDisplayComponent {
     this.annotations = [];
     this.activeAnnotation = null;
 
+    this.interaction.setImageToCanvasFunc(
+      this.imageCoordsToCanvasCoords.bind(this)
+    );
+    this.interaction.setCanvasToImageFunc((x, y) =>
+      this.canvasCoordsToImageCoords(x, y)
+    );
+
     // Wire ESC and contextmenu for cancel
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
@@ -288,11 +295,16 @@ export class ImageDisplayComponent {
 
     // Draw finished annotations
     for (const annotation of this.annotations) {
-      annotation.draw(ctx);
+      annotation.draw(ctx, {
+        imageToCanvas: this.imageCoordsToCanvasCoords.bind(this),
+      });
     }
     // Draw preview annotation
     if (this.activeAnnotation) {
-      this.activeAnnotation.draw(ctx, { preview: true });
+      this.activeAnnotation.draw(ctx, {
+        preview: true,
+        imageToCanvas: this.imageCoordsToCanvasCoords.bind(this),
+      });
     }
 
     // Draw meta info (below the image)

@@ -1,14 +1,10 @@
 import { Annotation } from "./base.js";
 
-function dist2(a, b) {
-  return (a.canvasX - b.canvasX) ** 2 + (a.canvasY - b.canvasY) ** 2;
-}
-
 export class LineAnnotation extends Annotation {
   constructor(start, end) {
     super("line");
-    this.start = start;
-    this.end = end;
+    this.start = start; // {imgX, imgY}
+    this.end = end; // {imgX, imgY}
   }
 
   toJSON() {
@@ -24,16 +20,21 @@ export class LineAnnotation extends Annotation {
   }
 
   draw(ctx, opts = {}) {
+    const { imageToCanvas } = opts;
+    // Convert img coords to canvas coords
+    const a = imageToCanvas(this.start.imgX, this.start.imgY);
+    const b = imageToCanvas(this.end.imgX, this.end.imgY);
+
     ctx.save();
     ctx.strokeStyle = this.selected ? "#0FF" : "#FFF";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(this.start.canvasX, this.start.canvasY);
-    ctx.lineTo(this.end.canvasX, this.end.canvasY);
+    ctx.moveTo(a.canvasX, a.canvasY);
+    ctx.lineTo(b.canvasX, b.canvasY);
     ctx.stroke();
+    // Handles
     if (this.selected) {
-      // Draw handles
-      [this.start, this.end].forEach((pt) => {
+      [a, b].forEach((pt) => {
         ctx.beginPath();
         ctx.arc(pt.canvasX, pt.canvasY, 7, 0, 2 * Math.PI);
         ctx.fillStyle = "#FFF";
@@ -45,16 +46,28 @@ export class LineAnnotation extends Annotation {
     }
     ctx.restore();
   }
-  // Hit test for line or ends
-  hitTest(pos) {
-    // Check ends first
-    if (Math.sqrt(dist2(this.start, pos)) <= 8) return true;
-    if (Math.sqrt(dist2(this.end, pos)) <= 8) return true;
-    // Check near line
-    const { canvasX: x1, canvasY: y1 } = this.start;
-    const { canvasX: x2, canvasY: y2 } = this.end;
+
+  // (Optional) Hit test for endpoints and line
+  hitTest(pos, imageToCanvas) {
+    // Convert endpoints to canvas coords
+    const a = imageToCanvas(this.start.imgX, this.start.imgY);
+    const b = imageToCanvas(this.end.imgX, this.end.imgY);
+
+    function dist2(pt1, pt2) {
+      return (
+        (pt1.canvasX - pt2.canvasX) ** 2 + (pt1.canvasY - pt2.canvasY) ** 2
+      );
+    }
+
+    // Check endpoints first
+    if (Math.sqrt(dist2(a, pos)) <= 8) return true;
+    if (Math.sqrt(dist2(b, pos)) <= 8) return true;
+
+    // Check near line segment
+    const { canvasX: x1, canvasY: y1 } = a;
+    const { canvasX: x2, canvasY: y2 } = b;
     const { canvasX: px, canvasY: py } = pos;
-    const L2 = dist2(this.start, this.end);
+    const L2 = dist2(a, b);
     if (L2 === 0) return false;
     let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / L2;
     t = Math.max(0, Math.min(1, t));
@@ -67,9 +80,29 @@ export class LineAnnotation extends Annotation {
     );
     return dist < 8;
   }
-  hitTestHandle(pos) {
-    if (Math.sqrt(dist2(this.start, pos)) <= 8) return "start";
-    if (Math.sqrt(dist2(this.end, pos)) <= 8) return "end";
+
+  hitTestHandle(pos, imageToCanvas) {
+    // pos = {canvasX, canvasY}
+    const handles = [
+      { handleId: "start", ...this.start },
+      { handleId: "end", ...this.end },
+    ];
+    for (const handle of handles) {
+      const { canvasX, canvasY } = imageToCanvas(handle.imgX, handle.imgY);
+      const dx = pos.canvasX - canvasX;
+      const dy = pos.canvasY - canvasY;
+      if (Math.sqrt(dx * dx + dy * dy) < 8) return handle.handleId;
+    }
     return null;
+  }
+
+  moveHandle(handleId, imgCoords) {
+    if (handleId === "start") {
+      this.start.imgX = imgCoords.imgX;
+      this.start.imgY = imgCoords.imgY;
+    } else if (handleId === "end") {
+      this.end.imgX = imgCoords.imgX;
+      this.end.imgY = imgCoords.imgY;
+    }
   }
 }

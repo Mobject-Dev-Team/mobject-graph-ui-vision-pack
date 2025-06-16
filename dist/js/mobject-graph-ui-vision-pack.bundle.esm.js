@@ -9236,6 +9236,8 @@ class CanvasInteractionManager {
     this.mode = "select"; // start in select mode
     this.selectedAnnotation = null;
     this.draggingHandle = null;
+    this.canvasToImage = null; // Function to convert canvas coords to image coords
+    this.imageToCanvas = null; // Function to convert image coords to canvas coords
   }
   setTool(toolInstance) {
     this.currentTool = toolInstance;
@@ -9248,35 +9250,57 @@ class CanvasInteractionManager {
     this.annotations = annotations; // for hit-testing
   }
 
+  setImageToCanvasFunc(func) {
+    this.imageToCanvas = func;
+  }
+  setCanvasToImageFunc(func) {
+    this.canvasToImage = func;
+  }
+
   pointerDown(pos, imageCoords, button = 0) {
     if (this.mode === "draw") {
       this.currentTool?.pointerDown(pos, imageCoords, button);
       return;
     }
-    // Selection mode
     if (!this.annotations) return;
-    // Go backwards for z-order
+
+    let found = false;
+    let selectedAnnotation = null;
+    let draggingHandle = null;
+
+    // Go backwards for z-order (topmost first)
     for (let i = this.annotations.length - 1; i >= 0; i--) {
       const ann = this.annotations[i];
-      const handle = ann.hitTestHandle(pos);
-      if (handle) {
-        this.selectedAnnotation = ann;
-        ann.selected = true;
-        this.draggingHandle = handle;
-        return;
+      if (!found) {
+        // Only first annotation that is hit gets selected
+        const handleId = ann.hitTestHandle(pos, this.imageToCanvas);
+        if (handleId) {
+          selectedAnnotation = ann;
+          draggingHandle = handleId;
+          ann.selected = true;
+          found = true;
+          continue;
+        } else if (ann.hitTest && ann.hitTest(pos, this.imageToCanvas)) {
+          selectedAnnotation = ann;
+          draggingHandle = null;
+          ann.selected = true;
+          found = true;
+          continue;
+        }
       }
-      if (ann.hitTest(pos)) {
-        this.selectedAnnotation = ann;
-        ann.selected = true;
-        this.draggingHandle = null;
-        return;
-      }
+      // All others (including overlapping ones) are NOT selected
+      ann.selected = false;
     }
-    // Clicked empty space: deselect
-    this.selectedAnnotation?.selected &&
-      (this.selectedAnnotation.selected = false);
-    this.selectedAnnotation = null;
-    this.draggingHandle = null;
+
+    this.selectedAnnotation = selectedAnnotation;
+    this.draggingHandle = draggingHandle;
+
+    // If nothing hit, clear all selections
+    if (!selectedAnnotation) {
+      this.selectedAnnotation = null;
+      this.draggingHandle = null;
+      for (const ann of this.annotations) ann.selected = false;
+    }
   }
 
   pointerMove(pos, imageCoords) {
@@ -9284,30 +9308,38 @@ class CanvasInteractionManager {
       this.currentTool?.pointerMove(pos, imageCoords);
       return;
     }
-    // If dragging
-    if (this.selectedAnnotation) {
-      // Move handle or whole annotation
-      if (this.draggingHandle) {
-        if (this.selectedAnnotation.type === "line") {
-          if (this.draggingHandle === "start")
-            Object.assign(this.selectedAnnotation.start, pos, imageCoords);
-          if (this.draggingHandle === "end")
-            Object.assign(this.selectedAnnotation.end, pos, imageCoords);
-        }
-        if (this.selectedAnnotation.type === "rectangle") {
-          if (this.draggingHandle === "start")
-            Object.assign(this.selectedAnnotation.start, pos, imageCoords);
-          if (this.draggingHandle === "end")
-            Object.assign(this.selectedAnnotation.end, pos, imageCoords);
-        }
-        if (
-          this.selectedAnnotation.type === "point" &&
-          this.draggingHandle === "point"
-        ) {
-          Object.assign(this.selectedAnnotation.coord, pos, imageCoords);
-        }
-      }
+
+    if (this.selectedAnnotation && this.draggingHandle) {
+      const imgCoords = this.canvasToImage(pos.canvasX, pos.canvasY);
+      this.selectedAnnotation.moveHandle(this.draggingHandle, {
+        imgX: imgCoords[0],
+        imgY: imgCoords[1],
+      });
     }
+    // // If dragging
+    // if (this.selectedAnnotation) {
+    //   // Move handle or whole annotation
+    //   if (this.draggingHandle) {
+    //     if (this.selectedAnnotation.type === "line") {
+    //       if (this.draggingHandle === "start")
+    //         Object.assign(this.selectedAnnotation.start, pos, imageCoords);
+    //       if (this.draggingHandle === "end")
+    //         Object.assign(this.selectedAnnotation.end, pos, imageCoords);
+    //     }
+    //     if (this.selectedAnnotation.type === "rectangle") {
+    //       if (this.draggingHandle === "start")
+    //         Object.assign(this.selectedAnnotation.start, pos, imageCoords);
+    //       if (this.draggingHandle === "end")
+    //         Object.assign(this.selectedAnnotation.end, pos, imageCoords);
+    //     }
+    //     if (
+    //       this.selectedAnnotation.type === "point" &&
+    //       this.draggingHandle === "point"
+    //     ) {
+    //       Object.assign(this.selectedAnnotation.coord, pos, imageCoords);
+    //     }
+    //   }
+    // }
   }
 
   pointerUp(pos, imageCoords) {
@@ -9391,31 +9423,50 @@ class PointAnnotation extends Annotation {
   }
 
   draw(ctx, opts = {}) {
+    const { imageToCanvas } = opts;
+    const { canvasX, canvasY } = imageToCanvas(
+      this.coord.imgX,
+      this.coord.imgY
+    );
     ctx.save();
     ctx.beginPath();
-    ctx.arc(this.coord.canvasX, this.coord.canvasY, 5, 0, 2 * Math.PI);
+    ctx.arc(canvasX, canvasY, 5, 0, 2 * Math.PI);
     ctx.fillStyle = this.selected ? "#0FF" : "#FFF";
     ctx.strokeStyle = "#333";
     ctx.lineWidth = 2;
     ctx.fill();
     ctx.stroke();
     if (this.selected) {
-      // Draw handle
       ctx.beginPath();
-      ctx.arc(this.coord.canvasX, this.coord.canvasY, 8, 0, 2 * Math.PI);
+      ctx.arc(canvasX, canvasY, 8, 0, 2 * Math.PI);
       ctx.strokeStyle = "#0FF";
       ctx.lineWidth = 2;
       ctx.stroke();
     }
     ctx.restore();
   }
-  hitTest(pos) {
-    const dx = pos.canvasX - this.coord.canvasX;
-    const dy = pos.canvasY - this.coord.canvasY;
-    return Math.sqrt(dx * dx + dy * dy) <= 8; // within 8px
+
+  hitTest(pos, imageToCanvas) {
+    const handleCanvas = imageToCanvas(this.coord.imgX, this.coord.imgY);
+    const dx = pos.canvasX - handleCanvas.canvasX;
+    const dy = pos.canvasY - handleCanvas.canvasY;
+    return Math.sqrt(dx * dx + dy * dy) <= 8;
   }
-  hitTestHandle(pos) {
-    return this.hitTest(pos) ? "point" : null;
+
+  hitTestHandle(pos, imageToCanvas) {
+    // pos = {canvasX, canvasY}
+    const handleCanvas = imageToCanvas(this.coord.imgX, this.coord.imgY);
+    const dx = pos.canvasX - handleCanvas.canvasX;
+    const dy = pos.canvasY - handleCanvas.canvasY;
+    if (Math.sqrt(dx * dx + dy * dy) < 8) return "point";
+    return null;
+  }
+
+  moveHandle(handleId, imgCoords) {
+    if (handleId === "point") {
+      this.coord.imgX = imgCoords.imgX;
+      this.coord.imgY = imgCoords.imgY;
+    }
   }
 }
 
@@ -9426,15 +9477,11 @@ class PointTool extends AnnotationTool {
   }
 }
 
-function dist2(a, b) {
-  return (a.canvasX - b.canvasX) ** 2 + (a.canvasY - b.canvasY) ** 2;
-}
-
-class LineAnnotation$1 extends Annotation {
+class LineAnnotation extends Annotation {
   constructor(start, end) {
     super("line");
-    this.start = start;
-    this.end = end;
+    this.start = start; // {imgX, imgY}
+    this.end = end; // {imgX, imgY}
   }
 
   toJSON() {
@@ -9446,20 +9493,25 @@ class LineAnnotation$1 extends Annotation {
   }
 
   static fromJSON(data) {
-    return new LineAnnotation$1({ ...data.start }, { ...data.end });
+    return new LineAnnotation({ ...data.start }, { ...data.end });
   }
 
   draw(ctx, opts = {}) {
+    const { imageToCanvas } = opts;
+    // Convert img coords to canvas coords
+    const a = imageToCanvas(this.start.imgX, this.start.imgY);
+    const b = imageToCanvas(this.end.imgX, this.end.imgY);
+
     ctx.save();
     ctx.strokeStyle = this.selected ? "#0FF" : "#FFF";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(this.start.canvasX, this.start.canvasY);
-    ctx.lineTo(this.end.canvasX, this.end.canvasY);
+    ctx.moveTo(a.canvasX, a.canvasY);
+    ctx.lineTo(b.canvasX, b.canvasY);
     ctx.stroke();
+    // Handles
     if (this.selected) {
-      // Draw handles
-      [this.start, this.end].forEach((pt) => {
+      [a, b].forEach((pt) => {
         ctx.beginPath();
         ctx.arc(pt.canvasX, pt.canvasY, 7, 0, 2 * Math.PI);
         ctx.fillStyle = "#FFF";
@@ -9471,16 +9523,28 @@ class LineAnnotation$1 extends Annotation {
     }
     ctx.restore();
   }
-  // Hit test for line or ends
-  hitTest(pos) {
-    // Check ends first
-    if (Math.sqrt(dist2(this.start, pos)) <= 8) return true;
-    if (Math.sqrt(dist2(this.end, pos)) <= 8) return true;
-    // Check near line
-    const { canvasX: x1, canvasY: y1 } = this.start;
-    const { canvasX: x2, canvasY: y2 } = this.end;
+
+  // (Optional) Hit test for endpoints and line
+  hitTest(pos, imageToCanvas) {
+    // Convert endpoints to canvas coords
+    const a = imageToCanvas(this.start.imgX, this.start.imgY);
+    const b = imageToCanvas(this.end.imgX, this.end.imgY);
+
+    function dist2(pt1, pt2) {
+      return (
+        (pt1.canvasX - pt2.canvasX) ** 2 + (pt1.canvasY - pt2.canvasY) ** 2
+      );
+    }
+
+    // Check endpoints first
+    if (Math.sqrt(dist2(a, pos)) <= 8) return true;
+    if (Math.sqrt(dist2(b, pos)) <= 8) return true;
+
+    // Check near line segment
+    const { canvasX: x1, canvasY: y1 } = a;
+    const { canvasX: x2, canvasY: y2 } = b;
     const { canvasX: px, canvasY: py } = pos;
-    const L2 = dist2(this.start, this.end);
+    const L2 = dist2(a, b);
     if (L2 === 0) return false;
     let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / L2;
     t = Math.max(0, Math.min(1, t));
@@ -9493,10 +9557,30 @@ class LineAnnotation$1 extends Annotation {
     );
     return dist < 8;
   }
-  hitTestHandle(pos) {
-    if (Math.sqrt(dist2(this.start, pos)) <= 8) return "start";
-    if (Math.sqrt(dist2(this.end, pos)) <= 8) return "end";
+
+  hitTestHandle(pos, imageToCanvas) {
+    // pos = {canvasX, canvasY}
+    const handles = [
+      { handleId: "start", ...this.start },
+      { handleId: "end", ...this.end },
+    ];
+    for (const handle of handles) {
+      const { canvasX, canvasY } = imageToCanvas(handle.imgX, handle.imgY);
+      const dx = pos.canvasX - canvasX;
+      const dy = pos.canvasY - canvasY;
+      if (Math.sqrt(dx * dx + dy * dy) < 8) return handle.handleId;
+    }
     return null;
+  }
+
+  moveHandle(handleId, imgCoords) {
+    if (handleId === "start") {
+      this.start.imgX = imgCoords.imgX;
+      this.start.imgY = imgCoords.imgY;
+    } else if (handleId === "end") {
+      this.end.imgX = imgCoords.imgX;
+      this.end.imgY = imgCoords.imgY;
+    }
   }
 }
 
@@ -9513,7 +9597,7 @@ class LineTool extends AnnotationTool {
 
   pointerMove(pos, imageCoords) {
     if (!this.start) return;
-    this.activeAnnotation = new LineAnnotation$1(this.start, {
+    this.activeAnnotation = new LineAnnotation(this.start, {
       ...pos,
       ...imageCoords,
     });
@@ -9528,11 +9612,12 @@ class LineTool extends AnnotationTool {
   }
 }
 
-function pointInRect(pos, rectStart, rectEnd) {
-  const x = Math.min(rectStart.canvasX, rectEnd.canvasX);
-  const y = Math.min(rectStart.canvasY, rectEnd.canvasY);
-  const w = Math.abs(rectStart.canvasX - rectEnd.canvasX);
-  const h = Math.abs(rectStart.canvasY - rectEnd.canvasY);
+function pointInRect(pos, a, b) {
+  // a, b, pos: all canvas coords
+  const x = Math.min(a.canvasX, b.canvasX);
+  const y = Math.min(a.canvasY, b.canvasY);
+  const w = Math.abs(a.canvasX - b.canvasX);
+  const h = Math.abs(a.canvasY - b.canvasY);
   return (
     pos.canvasX >= x &&
     pos.canvasX <= x + w &&
@@ -9544,34 +9629,36 @@ function pointInRect(pos, rectStart, rectEnd) {
 class RectangleAnnotation extends Annotation {
   constructor(start, end) {
     super("rectangle");
-    this.start = start;
-    this.end = end;
+    this.start = start; // {imgX, imgY}
+    this.end = end; // {imgX, imgY}
   }
 
   toJSON() {
     return {
-      type: "line",
+      type: "rectangle",
       start: { ...this.start },
       end: { ...this.end },
     };
   }
 
   static fromJSON(data) {
-    return new LineAnnotation({ ...data.start }, { ...data.end });
+    return new RectangleAnnotation({ ...data.start }, { ...data.end });
   }
 
   draw(ctx, opts = {}) {
+    const { imageToCanvas } = opts;
+    const a = imageToCanvas(this.start.imgX, this.start.imgY);
+    const b = imageToCanvas(this.end.imgX, this.end.imgY);
+    const x = Math.min(a.canvasX, b.canvasX);
+    const y = Math.min(a.canvasY, b.canvasY);
+    const w = Math.abs(a.canvasX - b.canvasX);
+    const h = Math.abs(a.canvasY - b.canvasY);
     ctx.save();
     ctx.strokeStyle = this.selected ? "#0FF" : "#FFF";
     ctx.lineWidth = 2;
-    const x = Math.min(this.start.canvasX, this.end.canvasX);
-    const y = Math.min(this.start.canvasY, this.end.canvasY);
-    const w = Math.abs(this.end.canvasX - this.start.canvasX);
-    const h = Math.abs(this.end.canvasY - this.start.canvasY);
     ctx.strokeRect(x, y, w, h);
     if (this.selected) {
-      // Handles: 4 corners
-      [this.start, this.end].forEach((pt) => {
+      [a, b].forEach((pt) => {
         ctx.beginPath();
         ctx.arc(pt.canvasX, pt.canvasY, 7, 0, 2 * Math.PI);
         ctx.fillStyle = "#FFF";
@@ -9583,33 +9670,48 @@ class RectangleAnnotation extends Annotation {
     }
     ctx.restore();
   }
-  hitTest(pos) {
+
+  hitTest(pos, imageToCanvas) {
+    const a = imageToCanvas(this.start.imgX, this.start.imgY);
+    const b = imageToCanvas(this.end.imgX, this.end.imgY);
     // Check handles first
     if (
-      Math.abs(pos.canvasX - this.start.canvasX) <= 8 &&
-      Math.abs(pos.canvasY - this.start.canvasY) <= 8
+      Math.abs(pos.canvasX - a.canvasX) <= 8 &&
+      Math.abs(pos.canvasY - a.canvasY) <= 8
     )
       return true;
     if (
-      Math.abs(pos.canvasX - this.end.canvasX) <= 8 &&
-      Math.abs(pos.canvasY - this.end.canvasY) <= 8
+      Math.abs(pos.canvasX - b.canvasX) <= 8 &&
+      Math.abs(pos.canvasY - b.canvasY) <= 8
     )
       return true;
-    // Inside rectangle (with some tolerance)
-    return pointInRect(pos, this.start, this.end);
+    // Inside rectangle
+    return pointInRect(pos, a, b);
   }
-  hitTestHandle(pos) {
-    if (
-      Math.abs(pos.canvasX - this.start.canvasX) <= 8 &&
-      Math.abs(pos.canvasY - this.start.canvasY) <= 8
-    )
-      return "start";
-    if (
-      Math.abs(pos.canvasX - this.end.canvasX) <= 8 &&
-      Math.abs(pos.canvasY - this.end.canvasY) <= 8
-    )
-      return "end";
+
+  hitTestHandle(pos, imageToCanvas) {
+    // pos = {canvasX, canvasY}
+    const handles = [
+      { handleId: "start", imgX: this.start.imgX, imgY: this.start.imgY },
+      { handleId: "end", imgX: this.end.imgX, imgY: this.end.imgY },
+    ];
+    for (const handle of handles) {
+      const canvas = imageToCanvas(handle.imgX, handle.imgY);
+      const dx = pos.canvasX - canvas.canvasX;
+      const dy = pos.canvasY - canvas.canvasY;
+      if (Math.sqrt(dx * dx + dy * dy) < 8) return handle.handleId;
+    }
     return null;
+  }
+
+  moveHandle(handleId, imgCoords) {
+    if (handleId === "start") {
+      this.start.imgX = imgCoords.imgX;
+      this.start.imgY = imgCoords.imgY;
+    } else if (handleId === "end") {
+      this.end.imgX = imgCoords.imgX;
+      this.end.imgY = imgCoords.imgY;
+    }
   }
 }
 
@@ -9675,6 +9777,13 @@ class ImageDisplayComponent {
     this.annotations = [];
     this.activeAnnotation = null;
 
+    this.interaction.setImageToCanvasFunc(
+      this.imageCoordsToCanvasCoords.bind(this)
+    );
+    this.interaction.setCanvasToImageFunc((x, y) =>
+      this.canvasCoordsToImageCoords(x, y)
+    );
+
     // Wire ESC and contextmenu for cancel
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
@@ -9693,7 +9802,7 @@ class ImageDisplayComponent {
     const objs = JSON.parse(json);
     const AnnotationTypes = {
       point: PointAnnotation,
-      line: LineAnnotation$1,
+      line: LineAnnotation,
       rectangle: RectangleAnnotation,
     };
     this.annotations = objs
@@ -9915,11 +10024,16 @@ class ImageDisplayComponent {
 
     // Draw finished annotations
     for (const annotation of this.annotations) {
-      annotation.draw(ctx);
+      annotation.draw(ctx, {
+        imageToCanvas: this.imageCoordsToCanvasCoords.bind(this),
+      });
     }
     // Draw preview annotation
     if (this.activeAnnotation) {
-      this.activeAnnotation.draw(ctx, { preview: true });
+      this.activeAnnotation.draw(ctx, {
+        preview: true,
+        imageToCanvas: this.imageCoordsToCanvasCoords.bind(this),
+      });
     }
 
     // Draw meta info (below the image)
