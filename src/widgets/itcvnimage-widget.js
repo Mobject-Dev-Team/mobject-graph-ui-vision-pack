@@ -10,6 +10,7 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
 
   constructor(name, parent, options) {
     super(name, parent, options);
+    this.label = "Image Display";
     this.imageDisplay = new ImageDisplayComponent({});
     this.on("valueChanged", async (newValue, oldValue) => {
       await this.imageDisplay.setImageData(newValue);
@@ -44,6 +45,10 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
       }
     );
   }
+
+  getContextMenuOptions(event, localMouse, node) {
+    return this.imageDisplay.getContextMenuOptions(event, localMouse, node);
+  }
 }
 
 export class ITcVnImageControlWidget extends ControlWidget {
@@ -51,6 +56,7 @@ export class ITcVnImageControlWidget extends ControlWidget {
 
   constructor(name, property, parameter, content) {
     super(name, property, parameter, content);
+    this.label = "Image Control";
     this.imageDisplay = new ImageDisplayComponent({});
     this.droppedImageSize = ITcVnImageControlWidget.DEFAULT_SIZE;
 
@@ -122,5 +128,9 @@ export class ITcVnImageControlWidget extends ControlWidget {
     let newWidth = newHeight * aspectRatio;
     this.droppedImageSize = new Float32Array([newWidth, newHeight]);
     this.triggerParentResetSize?.();
+  }
+
+  getContextMenuOptions(event, localMouse, node) {
+    return this.imageDisplay.getContextMenuOptions(event, localMouse, node);
   }
 }

@@ -9308,6 +9308,9 @@ class ImageDisplayComponent {
     this.cachedComponentSize = result;
     return result;
   }
+  getMetaHeight() {
+    return this.metaHeight || 0;
+  }
 
   getImageMetaText() {
     const info = this.rawImageData?.imageInfo || {};
@@ -9427,7 +9430,8 @@ class ImageDisplayComponent {
     // Compute meta info
     const metaLines = this.getImageMetaText();
     const metaLineHeight = 16;
-    const metaHeight = metaLines.length * metaLineHeight + 8;
+    const metaHeight = (this.metaHeight =
+      metaLines.length * metaLineHeight + 8);
 
     // Layout
     const componentWidth = availableWidth - 2 * this.margin;
@@ -9487,6 +9491,61 @@ class ImageDisplayComponent {
     const totalWidth = availableWidth;
     this.cachedComponentSize = new Float32Array([totalWidth, totalHeight]);
   }
+
+  getContextMenuOptions(event, localMouse, node) {
+    const x = localMouse[0];
+    const y = localMouse[1];
+
+    if (!this.isPointInDrawArea(x, y)) return null;
+
+    const pixelCoords = this.hoverImageCoords;
+    const pixel = pixelCoords
+      ? this.itcVnImageDataDecoder.getPixel(pixelCoords.imgX, pixelCoords.imgY)
+      : null;
+
+    if (!pixelCoords || !pixel) return null;
+
+    const { imgX, imgY } = pixelCoords;
+
+    const submenuOptions = [];
+
+    submenuOptions.push({
+      content: `📋 X (${imgX})`,
+      callback: () => navigator.clipboard.writeText(`${imgX}`),
+    });
+    submenuOptions.push({
+      content: `📋 Y (${imgY})`,
+      callback: () => navigator.clipboard.writeText(`${imgY}`),
+    });
+
+    for (let i = 0; i < pixel.length; i++) {
+      submenuOptions.push({
+        content: `📋 ${"Ch" + i} (${pixel[i]})`,
+        callback: () => navigator.clipboard.writeText(`${pixel[i]}`),
+      });
+    }
+
+    submenuOptions.push({
+      content: `📋 All`,
+      callback: () =>
+        navigator.clipboard.writeText(
+          `${imgX}, ${imgY}, ${pixel.map((v) => `${v}`).join(", ")}`
+        ),
+    });
+
+    const menu = [];
+
+    menu.push(null, {
+      content: "Copy Values",
+      has_submenu: true,
+      submenu: {
+        title: "Copy Values",
+        options: submenuOptions,
+      },
+    });
+
+    return menu;
+  }
 }
 
 class CanvasInteractionManager {
@@ -9541,6 +9600,7 @@ class ITcVnImageDisplayWidget extends mobjectGraphUi.DisplayWidget {
 
   constructor(name, parent, options) {
     super(name, parent, options);
+    this.label = "Image Display";
     this.imageDisplay = new ImageDisplayComponent({});
     this.on("valueChanged", async (newValue, oldValue) => {
       await this.imageDisplay.setImageData(newValue);
@@ -9575,6 +9635,10 @@ class ITcVnImageDisplayWidget extends mobjectGraphUi.DisplayWidget {
       }
     );
   }
+
+  getContextMenuOptions(event, localMouse, node) {
+    return this.imageDisplay.getContextMenuOptions(event, localMouse, node);
+  }
 }
 
 class ITcVnImageControlWidget extends mobjectGraphUi.ControlWidget {
@@ -9582,6 +9646,7 @@ class ITcVnImageControlWidget extends mobjectGraphUi.ControlWidget {
 
   constructor(name, property, parameter, content) {
     super(name, property, parameter, content);
+    this.label = "Image Control";
     this.imageDisplay = new ImageDisplayComponent({});
     this.droppedImageSize = ITcVnImageControlWidget.DEFAULT_SIZE;
 
@@ -9653,6 +9718,10 @@ class ITcVnImageControlWidget extends mobjectGraphUi.ControlWidget {
     let newWidth = newHeight * aspectRatio;
     this.droppedImageSize = new Float32Array([newWidth, newHeight]);
     this.triggerParentResetSize?.();
+  }
+
+  getContextMenuOptions(event, localMouse, node) {
+    return this.imageDisplay.getContextMenuOptions(event, localMouse, node);
   }
 }
 

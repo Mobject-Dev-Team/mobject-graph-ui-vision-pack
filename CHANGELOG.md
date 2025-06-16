@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.1.15
+
+- added copy to right click menu on image display and control.
+
 ## 0.1.14
 
 - corrected dependency.
