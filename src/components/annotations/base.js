@@ -3,8 +3,21 @@ export class Annotation {
     this.type = type;
     this.selected = false;
   }
+  draw(ctx, opts = {}) {}
 
-  draw(ctx, opts = {}) {
-    // To be implemented by subclasses
+  hitTest(pos) {
+    return false;
+  }
+  
+  hitTestHandle(pos) {
+    return null;
+  } 
+
+  toJSON() {
+    return { type: this.type };
+  }
+
+  static fromJSON(data) {
+    return new Annotation(data.type);
   }
 }

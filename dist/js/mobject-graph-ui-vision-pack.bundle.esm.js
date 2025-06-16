@@ -9233,22 +9233,91 @@ class ItcVnImageDataDecoder {
 class CanvasInteractionManager {
   constructor() {
     this.currentTool = null;
+    this.mode = "select"; // start in select mode
+    this.selectedAnnotation = null;
+    this.draggingHandle = null;
   }
-
   setTool(toolInstance) {
     this.currentTool = toolInstance;
+    this.mode = toolInstance ? "draw" : "select";
+    this.selectedAnnotation = null;
+    this.draggingHandle = null;
+  }
+
+  setAnnotations(annotations) {
+    this.annotations = annotations; // for hit-testing
   }
 
   pointerDown(pos, imageCoords, button = 0) {
-    this.currentTool?.pointerDown(pos, imageCoords, button);
+    if (this.mode === "draw") {
+      this.currentTool?.pointerDown(pos, imageCoords, button);
+      return;
+    }
+    // Selection mode
+    if (!this.annotations) return;
+    // Go backwards for z-order
+    for (let i = this.annotations.length - 1; i >= 0; i--) {
+      const ann = this.annotations[i];
+      const handle = ann.hitTestHandle(pos);
+      if (handle) {
+        this.selectedAnnotation = ann;
+        ann.selected = true;
+        this.draggingHandle = handle;
+        return;
+      }
+      if (ann.hitTest(pos)) {
+        this.selectedAnnotation = ann;
+        ann.selected = true;
+        this.draggingHandle = null;
+        return;
+      }
+    }
+    // Clicked empty space: deselect
+    this.selectedAnnotation?.selected &&
+      (this.selectedAnnotation.selected = false);
+    this.selectedAnnotation = null;
+    this.draggingHandle = null;
   }
 
   pointerMove(pos, imageCoords) {
-    this.currentTool?.pointerMove(pos, imageCoords);
+    if (this.mode === "draw") {
+      this.currentTool?.pointerMove(pos, imageCoords);
+      return;
+    }
+    // If dragging
+    if (this.selectedAnnotation) {
+      // Move handle or whole annotation
+      if (this.draggingHandle) {
+        if (this.selectedAnnotation.type === "line") {
+          if (this.draggingHandle === "start")
+            Object.assign(this.selectedAnnotation.start, pos, imageCoords);
+          if (this.draggingHandle === "end")
+            Object.assign(this.selectedAnnotation.end, pos, imageCoords);
+        }
+        if (this.selectedAnnotation.type === "rectangle") {
+          if (this.draggingHandle === "start")
+            Object.assign(this.selectedAnnotation.start, pos, imageCoords);
+          if (this.draggingHandle === "end")
+            Object.assign(this.selectedAnnotation.end, pos, imageCoords);
+        }
+        if (
+          this.selectedAnnotation.type === "point" &&
+          this.draggingHandle === "point"
+        ) {
+          Object.assign(this.selectedAnnotation.coord, pos, imageCoords);
+        }
+      }
+    }
   }
 
   pointerUp(pos, imageCoords) {
-    this.currentTool?.pointerUp(pos, imageCoords);
+    if (this.mode === "draw") {
+      this.currentTool?.pointerUp(pos, imageCoords);
+      return;
+    }
+    // Done dragging
+    this.draggingHandle = null;
+    this.dragOffset = null;
   }
 
   get activeAnnotation() {
@@ -9256,7 +9325,12 @@ class CanvasInteractionManager {
   }
 
   cancelCurrentAction() {
-    this.currentTool?.cancel();
+    if (this.mode === "draw") {
+      this.currentTool?.cancel();
+    }
+    this.draggingHandle = null;
+    this.dragOffset = null;
+    this.selectedAnnotation = null;
   }
 }
 
@@ -9280,9 +9354,22 @@ class Annotation {
     this.type = type;
     this.selected = false;
   }
+  draw(ctx, opts = {}) {}
 
-  draw(ctx, opts = {}) {
-    // To be implemented by subclasses
+  hitTest(pos) {
+    return false;
+  }
+  
+  hitTestHandle(pos) {
+    return null;
+  } 
+
+  toJSON() {
+    return { type: this.type };
+  }
+
+  static fromJSON(data) {
+    return new Annotation(data.type);
   }
 }
 
@@ -9290,6 +9377,17 @@ class PointAnnotation extends Annotation {
   constructor(coord) {
     super("point");
     this.coord = coord;
+  }
+
+  toJSON() {
+    return {
+      type: "point",
+      coord: { ...this.coord },
+    };
+  }
+
+  static fromJSON(data) {
+    return new PointAnnotation({ ...data.coord });
   }
 
   draw(ctx, opts = {}) {
@@ -9301,7 +9399,23 @@ class PointAnnotation extends Annotation {
     ctx.lineWidth = 2;
     ctx.fill();
     ctx.stroke();
+    if (this.selected) {
+      // Draw handle
+      ctx.beginPath();
+      ctx.arc(this.coord.canvasX, this.coord.canvasY, 8, 0, 2 * Math.PI);
+      ctx.strokeStyle = "#0FF";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
     ctx.restore();
+  }
+  hitTest(pos) {
+    const dx = pos.canvasX - this.coord.canvasX;
+    const dy = pos.canvasY - this.coord.canvasY;
+    return Math.sqrt(dx * dx + dy * dy) <= 8; // within 8px
+  }
+  hitTestHandle(pos) {
+    return this.hitTest(pos) ? "point" : null;
   }
 }
 
@@ -9312,11 +9426,27 @@ class PointTool extends AnnotationTool {
   }
 }
 
-class LineAnnotation extends Annotation {
+function dist2(a, b) {
+  return (a.canvasX - b.canvasX) ** 2 + (a.canvasY - b.canvasY) ** 2;
+}
+
+class LineAnnotation$1 extends Annotation {
   constructor(start, end) {
     super("line");
     this.start = start;
     this.end = end;
+  }
+
+  toJSON() {
+    return {
+      type: "line",
+      start: { ...this.start },
+      end: { ...this.end },
+    };
+  }
+
+  static fromJSON(data) {
+    return new LineAnnotation$1({ ...data.start }, { ...data.end });
   }
 
   draw(ctx, opts = {}) {
@@ -9327,7 +9457,46 @@ class LineAnnotation extends Annotation {
     ctx.moveTo(this.start.canvasX, this.start.canvasY);
     ctx.lineTo(this.end.canvasX, this.end.canvasY);
     ctx.stroke();
+    if (this.selected) {
+      // Draw handles
+      [this.start, this.end].forEach((pt) => {
+        ctx.beginPath();
+        ctx.arc(pt.canvasX, pt.canvasY, 7, 0, 2 * Math.PI);
+        ctx.fillStyle = "#FFF";
+        ctx.strokeStyle = "#0FF";
+        ctx.lineWidth = 2;
+        ctx.fill();
+        ctx.stroke();
+      });
+    }
     ctx.restore();
+  }
+  // Hit test for line or ends
+  hitTest(pos) {
+    // Check ends first
+    if (Math.sqrt(dist2(this.start, pos)) <= 8) return true;
+    if (Math.sqrt(dist2(this.end, pos)) <= 8) return true;
+    // Check near line
+    const { canvasX: x1, canvasY: y1 } = this.start;
+    const { canvasX: x2, canvasY: y2 } = this.end;
+    const { canvasX: px, canvasY: py } = pos;
+    const L2 = dist2(this.start, this.end);
+    if (L2 === 0) return false;
+    let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / L2;
+    t = Math.max(0, Math.min(1, t));
+    const closest = {
+      canvasX: x1 + t * (x2 - x1),
+      canvasY: y1 + t * (y2 - y1),
+    };
+    const dist = Math.sqrt(
+      (closest.canvasX - px) ** 2 + (closest.canvasY - py) ** 2
+    );
+    return dist < 8;
+  }
+  hitTestHandle(pos) {
+    if (Math.sqrt(dist2(this.start, pos)) <= 8) return "start";
+    if (Math.sqrt(dist2(this.end, pos)) <= 8) return "end";
+    return null;
   }
 }
 
@@ -9344,7 +9513,7 @@ class LineTool extends AnnotationTool {
 
   pointerMove(pos, imageCoords) {
     if (!this.start) return;
-    this.activeAnnotation = new LineAnnotation(this.start, {
+    this.activeAnnotation = new LineAnnotation$1(this.start, {
       ...pos,
       ...imageCoords,
     });
@@ -9359,11 +9528,36 @@ class LineTool extends AnnotationTool {
   }
 }
 
+function pointInRect(pos, rectStart, rectEnd) {
+  const x = Math.min(rectStart.canvasX, rectEnd.canvasX);
+  const y = Math.min(rectStart.canvasY, rectEnd.canvasY);
+  const w = Math.abs(rectStart.canvasX - rectEnd.canvasX);
+  const h = Math.abs(rectStart.canvasY - rectEnd.canvasY);
+  return (
+    pos.canvasX >= x &&
+    pos.canvasX <= x + w &&
+    pos.canvasY >= y &&
+    pos.canvasY <= y + h
+  );
+}
+
 class RectangleAnnotation extends Annotation {
   constructor(start, end) {
     super("rectangle");
     this.start = start;
     this.end = end;
+  }
+
+  toJSON() {
+    return {
+      type: "line",
+      start: { ...this.start },
+      end: { ...this.end },
+    };
+  }
+
+  static fromJSON(data) {
+    return new LineAnnotation({ ...data.start }, { ...data.end });
   }
 
   draw(ctx, opts = {}) {
@@ -9375,7 +9569,47 @@ class RectangleAnnotation extends Annotation {
     const w = Math.abs(this.end.canvasX - this.start.canvasX);
     const h = Math.abs(this.end.canvasY - this.start.canvasY);
     ctx.strokeRect(x, y, w, h);
+    if (this.selected) {
+      // Handles: 4 corners
+      [this.start, this.end].forEach((pt) => {
+        ctx.beginPath();
+        ctx.arc(pt.canvasX, pt.canvasY, 7, 0, 2 * Math.PI);
+        ctx.fillStyle = "#FFF";
+        ctx.strokeStyle = "#0FF";
+        ctx.lineWidth = 2;
+        ctx.fill();
+        ctx.stroke();
+      });
+    }
     ctx.restore();
+  }
+  hitTest(pos) {
+    // Check handles first
+    if (
+      Math.abs(pos.canvasX - this.start.canvasX) <= 8 &&
+      Math.abs(pos.canvasY - this.start.canvasY) <= 8
+    )
+      return true;
+    if (
+      Math.abs(pos.canvasX - this.end.canvasX) <= 8 &&
+      Math.abs(pos.canvasY - this.end.canvasY) <= 8
+    )
+      return true;
+    // Inside rectangle (with some tolerance)
+    return pointInRect(pos, this.start, this.end);
+  }
+  hitTestHandle(pos) {
+    if (
+      Math.abs(pos.canvasX - this.start.canvasX) <= 8 &&
+      Math.abs(pos.canvasY - this.start.canvasY) <= 8
+    )
+      return "start";
+    if (
+      Math.abs(pos.canvasX - this.end.canvasX) <= 8 &&
+      Math.abs(pos.canvasY - this.end.canvasY) <= 8
+    )
+      return "end";
+    return null;
   }
 }
 
@@ -9441,13 +9675,6 @@ class ImageDisplayComponent {
     this.annotations = [];
     this.activeAnnotation = null;
 
-    // Inject annotation handler into interaction
-    this.interaction.onFinishAnnotation = (annotation) => {
-      this.annotations.push(annotation);
-      this.activeAnnotation = null;
-      this.requestRedraw && this.requestRedraw();
-    };
-
     // Wire ESC and contextmenu for cancel
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
@@ -9456,6 +9683,27 @@ class ImageDisplayComponent {
         this.requestRedraw && this.requestRedraw();
       }
     });
+  }
+
+  serializeAnnotations() {
+    return JSON.stringify(this.annotations.map((a) => a.toJSON()));
+  }
+
+  loadAnnotations(json) {
+    const objs = JSON.parse(json);
+    const AnnotationTypes = {
+      point: PointAnnotation,
+      line: LineAnnotation$1,
+      rectangle: RectangleAnnotation,
+    };
+    this.annotations = objs
+      .map((obj) => {
+        const Ctor = AnnotationTypes[obj.type];
+        return Ctor ? Ctor.fromJSON(obj) : null;
+      })
+      .filter(Boolean);
+    this.interaction.setAnnotations(this.annotations);
+    this.requestRedraw && this.requestRedraw();
   }
 
   async setImageData(newValue) {
@@ -9789,6 +10037,7 @@ class ImageDisplayComponent {
     let tool;
     const finish = (annotation) => {
       this.annotations.push(annotation);
+      this.interaction.setAnnotations(this.annotations);
       this.activeAnnotation = null;
       this.requestRedraw && this.requestRedraw();
       // After finishing, return to "null tool" (no drawing)
@@ -9804,90 +10053,6 @@ class ImageDisplayComponent {
     this.interaction.setTool(tool);
   }
 }
-
-// class CanvasInteractionManager {
-//   constructor() {
-//     this.mode = "select"; // or add_point, add_line, add_rectangle
-//     this.annotationTypeToAdd = null;
-//     this.dragStart = null; // {canvasX, canvasY, imgX, imgY}
-//     this.dragEnd = null;
-//     this.activeAnnotation = null;
-//     this.onFinishAnnotation = null;
-//   }
-//   setMode(mode, type = null) {
-//     this.mode = mode;
-//     this.annotationTypeToAdd = type;
-//     this.dragStart = null;
-//     this.dragEnd = null;
-//     this.activeAnnotation = null;
-//   }
-//   pointerDown(pos, imageCoords, button = 0) {
-//     if (this.mode === "select") {
-//       this.dragStart = { ...pos, ...imageCoords };
-//       this.dragEnd = { ...pos, ...imageCoords };
-//       return;
-//     }
-//     if (this.mode.startsWith("add_")) {
-//       if (this.annotationTypeToAdd === "point") {
-//         if (this.onFinishAnnotation)
-//           this.onFinishAnnotation(
-//             new PointAnnotation({ ...pos, ...imageCoords })
-//           );
-//         this.setMode("select");
-//         return;
-//       } else {
-//         this.dragStart = { ...pos, ...imageCoords };
-//         this.dragEnd = { ...pos, ...imageCoords };
-//       }
-//     }
-//   }
-//   pointerMove(pos, imageCoords) {
-//     if (!this.dragStart) return;
-//     if (this.mode === "select") {
-//       this.dragEnd = { ...pos, ...imageCoords };
-//       return;
-//     }
-//     if (
-//       this.dragStart &&
-//       this.mode.startsWith("add_") &&
-//       this.annotationTypeToAdd !== "point"
-//     ) {
-//       this.dragEnd = { ...pos, ...imageCoords };
-//       if (this.annotationTypeToAdd === "line") {
-//         this.activeAnnotation = new LineAnnotation(
-//           this.dragStart,
-//           this.dragEnd
-//         );
-//       } else if (this.annotationTypeToAdd === "rectangle") {
-//         this.activeAnnotation = new RectangleAnnotation(
-//           this.dragStart,
-//           this.dragEnd
-//         );
-//       }
-//     }
-//   }
-//   pointerUp(pos, imageCoords) {
-//     if (!this.dragStart || !this.dragEnd) return;
-//     if (this.mode === "select") {
-//       this.dragStart = null;
-//       this.dragEnd = null;
-//       return;
-//     }
-//     if (this.mode.startsWith("add_") && this.annotationTypeToAdd !== "point") {
-//       // Complete annotation
-//       if (this.onFinishAnnotation && this.activeAnnotation)
-//         this.onFinishAnnotation(this.activeAnnotation);
-//       this.setMode("select");
-//     }
-//   }
-//   cancelCurrentAction() {
-//     this.dragStart = null;
-//     this.dragEnd = null;
-//     this.activeAnnotation = null;
-//     this.mode = "select";
-//     this.annotationTypeToAdd = null;
-//   }
-// }
 
 class ITcVnImageDisplayWidget extends DisplayWidget {
   static DEFAULT_SIZE = new Float32Array([300, 300]);
