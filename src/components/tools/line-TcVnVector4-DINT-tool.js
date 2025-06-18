@@ -1,7 +1,7 @@
 import { AnnotationTool } from "./base-tool.js";
-import { TcVnVector4_DINT_Annotation } from "../annotations/tcVnVector4_DINT-annotation.js";
+import { Line_TcVnVector4_DINT_Annotation } from "../annotations/line-TcVnVector4_DINT-annotation.js";
 
-export class TcVnVector4_DINT_Tool extends AnnotationTool {
+export class Line_TcVnVector4_DINT_Tool extends AnnotationTool {
   constructor(finishCallback) {
     super(finishCallback);
     this.start = null;
@@ -11,7 +11,7 @@ export class TcVnVector4_DINT_Tool extends AnnotationTool {
 
   pointerDown(pos, imageCoords) {
     this.start = { ...pos, ...imageCoords };
-    this.activeAnnotation = new TcVnVector4_DINT_Annotation(
+    this.activeAnnotation = new Line_TcVnVector4_DINT_Annotation(
       this.start,
       this.start
     );
@@ -38,7 +38,7 @@ export class TcVnVector4_DINT_Tool extends AnnotationTool {
   draw(ctx, opts) {
     super.draw(ctx, opts);
     if (!this.start && this.hover) {
-      TcVnVector4_DINT_Annotation.drawGhostHandle(ctx, this.hover);
+      Line_TcVnVector4_DINT_Annotation.drawGhostHandle(ctx, this.hover);
     }
   }
 }

@@ -1,7 +1,7 @@
 import { AnnotationTool } from "./base-tool.js";
-import { TcVnRectangle_DINT_Annotation } from "../annotations/tcVnRectangle-DINT-annotation.js";
+import { Rectangle_TcVnRectangle_DINT_Annotation } from "../annotations/rectangle-TcVnRectangle-DINT-annotation.js";
 
-export class TcVnRectangle_DINT_Tool extends AnnotationTool {
+export class Rectangle_TcVnRectangle_DINT_Tool extends AnnotationTool {
   constructor(finishCallback) {
     super(finishCallback);
     this.start = null;
@@ -11,7 +11,7 @@ export class TcVnRectangle_DINT_Tool extends AnnotationTool {
 
   pointerDown(pos, imageCoords) {
     this.start = { ...pos, ...imageCoords };
-    this.activeAnnotation = new TcVnRectangle_DINT_Annotation(
+    this.activeAnnotation = new Rectangle_TcVnRectangle_DINT_Annotation(
       this.start,
       this.start
     );
@@ -40,7 +40,7 @@ export class TcVnRectangle_DINT_Tool extends AnnotationTool {
   draw(ctx, opts) {
     super.draw(ctx, opts);
     if (!this.start && this.hover) {
-      TcVnRectangle_DINT_Annotation.drawGhostHandle(ctx, this.hover);
+      Rectangle_TcVnRectangle_DINT_Annotation.drawGhostHandle(ctx, this.hover);
     }
   }
 }

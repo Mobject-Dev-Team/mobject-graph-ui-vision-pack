@@ -4,10 +4,10 @@ import { ItcVnImageDataDecoder } from "../utils/itcvnimagedata-decoder.js";
 import { clamp } from "mobject-graph-ui";
 
 import { CanvasInteractionManager } from "./canvas-interaction-manager.js";
-import { TcVnPoint2_REAL_Tool } from "./tools/tcVnPoint2-REAL-tool.js";
-import { TcVnPoint2_LREAL_Tool } from "./tools/tcVnPoint2-LREAL-tool.js";
-import { TcVnVector4_DINT_Tool } from "./tools/TcVnVector4-DINT-tool.js";
-import { TcVnRectangle_DINT_Tool } from "./tools/tcVnRectangle-DINT-tool.js";
+import { Point_TcVnPoint2_REAL_Tool } from "./tools/point-TcVnPoint2-REAL-tool.js";
+import { Point_TcVnPoint2_LREAL_Tool } from "./tools/point-TcVnPoint2-LREAL-tool.js";
+import { Line_TcVnVector4_DINT_Tool } from "./tools/line-TcVnVector4-DINT-tool.js";
+import { Rectangle_TcVnRectangle_DINT_Tool } from "./tools/rectangle-TcVnRectangle-DINT-tool.js";
 import { AnnotationRegistry } from "./annotations/annotation-registry.js";
 
 export class ImageDisplayComponent {
@@ -46,6 +46,11 @@ export class ImageDisplayComponent {
     this.currentLoadId = 0;
     this.interaction = new CanvasInteractionManager();
     this.annotations = [];
+    this.handleGraphConfigure = this.handleGraphConfigure.bind(this);
+
+    this.parentWidget?.parent.on("removed", () => {
+      this.destroy();
+    });
 
     this.interaction.setImageToCanvasFunc(
       this.imageCoordsToCanvasCoords.bind(this)
@@ -62,13 +67,24 @@ export class ImageDisplayComponent {
     });
   }
 
-  serializeAnnotations() {
-    return JSON.stringify(this.annotations.map((a) => a.toJSON()));
+  destroy() {
+    window.removeEventListener("keydown", this.handleKeyDown);
   }
 
-  loadAnnotations(json) {
-    const objs = JSON.parse(json);
-    this.annotations = objs
+  handleGraphConfigure() {
+    this.linkAnnotationsToNodes();
+  }
+
+  saveAnnotations() {
+    return this.annotations.map((a) => a.toJSON());
+  }
+
+  loadAnnotations(annotations) {
+    if (!annotations || !Array.isArray(annotations)) {
+      console.warn("Invalid annotations format, expected an array.");
+      return;
+    }
+    this.annotations = annotations
       .map((obj) => {
         const Ctor = AnnotationRegistry.get(obj.type);
         if (!Ctor) {
@@ -79,6 +95,33 @@ export class ImageDisplayComponent {
       })
       .filter(Boolean);
     this.interaction.setAnnotations(this.annotations);
+  }
+
+  linkAnnotationsToNodes() {
+    const graph = this.parentWidget?.parent?.graph;
+    if (!graph) return;
+
+    for (const annotation of this.annotations) {
+      if (annotation.linkedNodeId) {
+        const node = graph.getNodeById(annotation.linkedNodeId);
+        if (node) {
+          annotation.bindToNode?.(node);
+        } else {
+          annotation.isOrphan = true;
+        }
+      }
+    }
+  }
+
+  onSerialize() {
+    return { annotations: this.saveAnnotations() };
+  }
+
+  onConfigure(info) {
+    if (info.annotations) {
+      this.loadAnnotations(info.annotations);
+    }
+    this.linkAnnotationsToNodes();
   }
 
   async setImageData(newValue) {
@@ -185,7 +228,7 @@ export class ImageDisplayComponent {
   canvasCoordsToImageCoords(canvasX, canvasY) {
     const area = this.drawArea;
     const info = this.rawImageData?.imageInfo;
-    if (!area || !info || !info.nWidth || !info.nHeight) return null;
+    if (!area || !info || !info.nWidth || !info.nHeight) return [null, null];
     const { x, y, width, height } = area;
     const scaleX = info.nWidth / width;
     const scaleY = info.nHeight / height;
@@ -221,7 +264,10 @@ export class ImageDisplayComponent {
   }
 
   onMouse(event, pos) {
-    if (!this.drawArea) return;
+    const area = this.drawArea;
+    const info = this.rawImageData?.imageInfo;
+    if (!area || !info || !info.nWidth || !info.nHeight) return;
+
     const { imgX, imgY, canvasX, canvasY } =
       this.getClampedImageAndCanvasCoords(pos);
 
@@ -415,19 +461,21 @@ export class ImageDisplayComponent {
         options: [
           {
             content: "Add Point as TcVnPoint2_REAL",
-            callback: () => this.startAddAnnotation(TcVnPoint2_REAL_Tool),
+            callback: () => this.startAddAnnotation(Point_TcVnPoint2_REAL_Tool),
           },
           {
             content: "Add Point as TcVnPoint2_LREAL",
-            callback: () => this.startAddAnnotation(TcVnPoint2_LREAL_Tool),
+            callback: () =>
+              this.startAddAnnotation(Point_TcVnPoint2_LREAL_Tool),
           },
           {
             content: "Add Line as TcVnVector4_DINT",
-            callback: () => this.startAddAnnotation(TcVnVector4_DINT_Tool),
+            callback: () => this.startAddAnnotation(Line_TcVnVector4_DINT_Tool),
           },
           {
             content: "Add Rectangle as TcVnRectangle_DINT",
-            callback: () => this.startAddAnnotation(TcVnRectangle_DINT_Tool),
+            callback: () =>
+              this.startAddAnnotation(Rectangle_TcVnRectangle_DINT_Tool),
           },
         ],
       },

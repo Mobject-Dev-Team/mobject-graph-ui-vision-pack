@@ -3,24 +3,27 @@ import { AnnotationRegistry } from "./annotation-registry.js";
 import { annotationTheme } from "./theme.js";
 import { UiVisionDraw } from "../../draw/ui-vision-draw.js";
 
-export class TcVnVector4_DINT_Annotation extends Annotation {
+export class Line_TcVnVector4_DINT_Annotation extends Annotation {
   static type = "TcVnVector4_DINT";
   constructor(start, end) {
-    super(TcVnVector4_DINT_Annotation.type);
+    super(Line_TcVnVector4_DINT_Annotation.type);
     this.start = start;
     this.end = end;
   }
 
   toJSON() {
     return {
-      type: TcVnVector4_DINT_Annotation.type,
+      type: Line_TcVnVector4_DINT_Annotation.type,
       start: { ...this.start },
       end: { ...this.end },
     };
   }
 
   static fromJSON(data) {
-    return new TcVnVector4_DINT_Annotation({ ...data.start }, { ...data.end });
+    return new Line_TcVnVector4_DINT_Annotation(
+      { ...data.start },
+      { ...data.end }
+    );
   }
 
   setEnd(end) {
@@ -160,6 +163,6 @@ export class TcVnVector4_DINT_Annotation extends Annotation {
 }
 
 AnnotationRegistry.register(
-  TcVnVector4_DINT_Annotation.type,
-  TcVnVector4_DINT_Annotation
+  Line_TcVnVector4_DINT_Annotation.type,
+  Line_TcVnVector4_DINT_Annotation
 );

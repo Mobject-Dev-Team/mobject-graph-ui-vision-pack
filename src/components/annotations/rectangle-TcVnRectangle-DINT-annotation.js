@@ -16,24 +16,24 @@ function pointInRect(pos, a, b) {
   );
 }
 
-export class TcVnRectangle_DINT_Annotation extends Annotation {
-  static type = "TcVnRectangle_DINT";
+export class Rectangle_TcVnRectangle_DINT_Annotation extends Annotation {
+  static type = "(rectangle)TcVnRectangle_DINT";
   constructor(start, end) {
-    super(TcVnRectangle_DINT_Annotation.type);
+    super(Rectangle_TcVnRectangle_DINT_Annotation.type);
     this.start = start;
     this.end = end;
   }
 
   toJSON() {
     return {
-      type: TcVnRectangle_DINT_Annotation.type,
+      type: Rectangle_TcVnRectangle_DINT_Annotation.type,
       start: { ...this.start },
       end: { ...this.end },
     };
   }
 
   static fromJSON(data) {
-    return new TcVnRectangle_DINT_Annotation(
+    return new Rectangle_TcVnRectangle_DINT_Annotation(
       { ...data.start },
       { ...data.end }
     );
@@ -200,6 +200,6 @@ export class TcVnRectangle_DINT_Annotation extends Annotation {
 }
 
 AnnotationRegistry.register(
-  TcVnRectangle_DINT_Annotation.type,
-  TcVnRectangle_DINT_Annotation
+  Rectangle_TcVnRectangle_DINT_Annotation.type,
+  Rectangle_TcVnRectangle_DINT_Annotation
 );

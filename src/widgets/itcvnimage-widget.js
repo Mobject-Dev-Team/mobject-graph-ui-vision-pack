@@ -17,6 +17,10 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
     });
   }
 
+  onSerialize(o) {
+    return this.imageDisplay.onSerialize(o);
+  }
+
   computeSize() {
     return this.imageDisplay.computeSize(
       ITcVnImageDisplayWidget.DEFAULT_SIZE[0],
@@ -49,6 +53,10 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
   getContextMenuOptions(event, localMouse, node) {
     return this.imageDisplay.getContextMenuOptions(event, localMouse, node);
   }
+
+  onConfigure(info) {
+    this.imageDisplay.onConfigure(info);
+  }
 }
 
 export class ITcVnImageControlWidget extends ControlWidget {
@@ -71,6 +79,10 @@ export class ITcVnImageControlWidget extends ControlWidget {
       await this.imageDisplay.setImageData(newValue);
       this.parent.setDirtyCanvas(true, true);
     });
+  }
+
+  onSerialize(o) {
+    return this.imageDisplay.onSerialize(o);
   }
 
   computeSize() {
@@ -132,5 +144,9 @@ export class ITcVnImageControlWidget extends ControlWidget {
 
   getContextMenuOptions(event, localMouse, node) {
     return this.imageDisplay.getContextMenuOptions(event, localMouse, node);
+  }
+
+  onConfigure(info) {
+    this.imageDisplay.onConfigure(info);
   }
 }

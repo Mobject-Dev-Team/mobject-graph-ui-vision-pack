@@ -9548,23 +9548,23 @@ const annotationTheme = {
   },
 };
 
-class TcVnPoint2_REAL_Annotation extends Annotation {
-  static type = "TcVnPoint2_REAL";
+class Point_TcVnPoint2_REAL_Annotation extends Annotation {
+  static type = "(point)TcVnPoint2_REAL";
 
   constructor(coord) {
-    super(TcVnPoint2_REAL_Annotation.type);
+    super(Point_TcVnPoint2_REAL_Annotation.type);
     this.coord = coord;
   }
 
   toJSON() {
     return {
-      type: TcVnPoint2_REAL_Annotation.type,
+      type: Point_TcVnPoint2_REAL_Annotation.type,
       coord: { ...this.coord },
     };
   }
 
   static fromJSON(data) {
-    return new TcVnPoint2_REAL_Annotation({ ...data.coord });
+    return new Point_TcVnPoint2_REAL_Annotation({ ...data.coord });
   }
 
   draw(ctx, opts = {}) {
@@ -9667,18 +9667,18 @@ class TcVnPoint2_REAL_Annotation extends Annotation {
 }
 
 AnnotationRegistry.register(
-  TcVnPoint2_REAL_Annotation.type,
-  TcVnPoint2_REAL_Annotation
+  Point_TcVnPoint2_REAL_Annotation.type,
+  Point_TcVnPoint2_REAL_Annotation
 );
 
-class TcVnPoint2_REAL_Tool extends AnnotationTool {
+class Point_TcVnPoint2_REAL_Tool extends AnnotationTool {
   constructor(finishCallback) {
     super(finishCallback);
     this.hover = null;
   }
 
   pointerDown(pos, imageCoords) {
-    const annotation = new TcVnPoint2_REAL_Annotation({
+    const annotation = new Point_TcVnPoint2_REAL_Annotation({
       ...pos,
       ...imageCoords,
     });
@@ -9693,28 +9693,28 @@ class TcVnPoint2_REAL_Tool extends AnnotationTool {
   draw(ctx, opts) {
     super.draw(ctx, opts);
     if (this.hover) {
-      TcVnPoint2_REAL_Annotation.drawGhostHandle(ctx, this.hover);
+      Point_TcVnPoint2_REAL_Annotation.drawGhostHandle(ctx, this.hover);
     }
   }
 }
 
-class TcVnPoint2_LREAL_Annotation extends Annotation {
-  static type = "TcVnPoint2_LREAL";
+class Point_TcVnPoint2_LREAL_Annotation extends Annotation {
+  static type = "(point)TcVnPoint2_LREAL";
 
   constructor(coord) {
-    super(TcVnPoint2_LREAL_Annotation.type);
+    super(Point_TcVnPoint2_LREAL_Annotation.type);
     this.coord = coord;
   }
 
   toJSON() {
     return {
-      type: TcVnPoint2_LREAL_Annotation.type,
+      type: Point_TcVnPoint2_LREAL_Annotation.type,
       coord: { ...this.coord },
     };
   }
 
   static fromJSON(data) {
-    return new TcVnPoint2_LREAL_Annotation({ ...data.coord });
+    return new Point_TcVnPoint2_LREAL_Annotation({ ...data.coord });
   }
 
   draw(ctx, opts = {}) {
@@ -9817,18 +9817,18 @@ class TcVnPoint2_LREAL_Annotation extends Annotation {
 }
 
 AnnotationRegistry.register(
-  TcVnPoint2_LREAL_Annotation.type,
-  TcVnPoint2_LREAL_Annotation
+  Point_TcVnPoint2_LREAL_Annotation.type,
+  Point_TcVnPoint2_LREAL_Annotation
 );
 
-class TcVnPoint2_LREAL_Tool extends AnnotationTool {
+class Point_TcVnPoint2_LREAL_Tool extends AnnotationTool {
   constructor(finishCallback) {
     super(finishCallback);
     this.hover = null;
   }
 
   pointerDown(pos, imageCoords) {
-    const annotation = new TcVnPoint2_LREAL_Annotation({
+    const annotation = new Point_TcVnPoint2_LREAL_Annotation({
       ...pos,
       ...imageCoords,
     });
@@ -9843,29 +9843,32 @@ class TcVnPoint2_LREAL_Tool extends AnnotationTool {
   draw(ctx, opts) {
     super.draw(ctx, opts);
     if (this.hover) {
-      TcVnPoint2_LREAL_Annotation.drawGhostHandle(ctx, this.hover);
+      Point_TcVnPoint2_LREAL_Annotation.drawGhostHandle(ctx, this.hover);
     }
   }
 }
 
-class TcVnVector4_DINT_Annotation extends Annotation {
+class Line_TcVnVector4_DINT_Annotation extends Annotation {
   static type = "TcVnVector4_DINT";
   constructor(start, end) {
-    super(TcVnVector4_DINT_Annotation.type);
+    super(Line_TcVnVector4_DINT_Annotation.type);
     this.start = start;
     this.end = end;
   }
 
   toJSON() {
     return {
-      type: TcVnVector4_DINT_Annotation.type,
+      type: Line_TcVnVector4_DINT_Annotation.type,
       start: { ...this.start },
       end: { ...this.end },
     };
   }
 
   static fromJSON(data) {
-    return new TcVnVector4_DINT_Annotation({ ...data.start }, { ...data.end });
+    return new Line_TcVnVector4_DINT_Annotation(
+      { ...data.start },
+      { ...data.end }
+    );
   }
 
   setEnd(end) {
@@ -10005,11 +10008,11 @@ class TcVnVector4_DINT_Annotation extends Annotation {
 }
 
 AnnotationRegistry.register(
-  TcVnVector4_DINT_Annotation.type,
-  TcVnVector4_DINT_Annotation
+  Line_TcVnVector4_DINT_Annotation.type,
+  Line_TcVnVector4_DINT_Annotation
 );
 
-class TcVnVector4_DINT_Tool extends AnnotationTool {
+class Line_TcVnVector4_DINT_Tool extends AnnotationTool {
   constructor(finishCallback) {
     super(finishCallback);
     this.start = null;
@@ -10019,7 +10022,7 @@ class TcVnVector4_DINT_Tool extends AnnotationTool {
 
   pointerDown(pos, imageCoords) {
     this.start = { ...pos, ...imageCoords };
-    this.activeAnnotation = new TcVnVector4_DINT_Annotation(
+    this.activeAnnotation = new Line_TcVnVector4_DINT_Annotation(
       this.start,
       this.start
     );
@@ -10046,7 +10049,7 @@ class TcVnVector4_DINT_Tool extends AnnotationTool {
   draw(ctx, opts) {
     super.draw(ctx, opts);
     if (!this.start && this.hover) {
-      TcVnVector4_DINT_Annotation.drawGhostHandle(ctx, this.hover);
+      Line_TcVnVector4_DINT_Annotation.drawGhostHandle(ctx, this.hover);
     }
   }
 }
@@ -10064,24 +10067,24 @@ function pointInRect(pos, a, b) {
   );
 }
 
-class TcVnRectangle_DINT_Annotation extends Annotation {
-  static type = "TcVnRectangle_DINT";
+class Rectangle_TcVnRectangle_DINT_Annotation extends Annotation {
+  static type = "(rectangle)TcVnRectangle_DINT";
   constructor(start, end) {
-    super(TcVnRectangle_DINT_Annotation.type);
+    super(Rectangle_TcVnRectangle_DINT_Annotation.type);
     this.start = start;
     this.end = end;
   }
 
   toJSON() {
     return {
-      type: TcVnRectangle_DINT_Annotation.type,
+      type: Rectangle_TcVnRectangle_DINT_Annotation.type,
       start: { ...this.start },
       end: { ...this.end },
     };
   }
 
   static fromJSON(data) {
-    return new TcVnRectangle_DINT_Annotation(
+    return new Rectangle_TcVnRectangle_DINT_Annotation(
       { ...data.start },
       { ...data.end }
     );
@@ -10248,11 +10251,11 @@ class TcVnRectangle_DINT_Annotation extends Annotation {
 }
 
 AnnotationRegistry.register(
-  TcVnRectangle_DINT_Annotation.type,
-  TcVnRectangle_DINT_Annotation
+  Rectangle_TcVnRectangle_DINT_Annotation.type,
+  Rectangle_TcVnRectangle_DINT_Annotation
 );
 
-class TcVnRectangle_DINT_Tool extends AnnotationTool {
+class Rectangle_TcVnRectangle_DINT_Tool extends AnnotationTool {
   constructor(finishCallback) {
     super(finishCallback);
     this.start = null;
@@ -10262,7 +10265,7 @@ class TcVnRectangle_DINT_Tool extends AnnotationTool {
 
   pointerDown(pos, imageCoords) {
     this.start = { ...pos, ...imageCoords };
-    this.activeAnnotation = new TcVnRectangle_DINT_Annotation(
+    this.activeAnnotation = new Rectangle_TcVnRectangle_DINT_Annotation(
       this.start,
       this.start
     );
@@ -10291,7 +10294,7 @@ class TcVnRectangle_DINT_Tool extends AnnotationTool {
   draw(ctx, opts) {
     super.draw(ctx, opts);
     if (!this.start && this.hover) {
-      TcVnRectangle_DINT_Annotation.drawGhostHandle(ctx, this.hover);
+      Rectangle_TcVnRectangle_DINT_Annotation.drawGhostHandle(ctx, this.hover);
     }
   }
 }
@@ -10332,6 +10335,11 @@ class ImageDisplayComponent {
     this.currentLoadId = 0;
     this.interaction = new CanvasInteractionManager();
     this.annotations = [];
+    this.handleGraphConfigure = this.handleGraphConfigure.bind(this);
+
+    this.parentWidget?.parent.on("removed", () => {
+      this.destroy();
+    });
 
     this.interaction.setImageToCanvasFunc(
       this.imageCoordsToCanvasCoords.bind(this)
@@ -10348,13 +10356,24 @@ class ImageDisplayComponent {
     });
   }
 
-  serializeAnnotations() {
-    return JSON.stringify(this.annotations.map((a) => a.toJSON()));
+  destroy() {
+    window.removeEventListener("keydown", this.handleKeyDown);
   }
 
-  loadAnnotations(json) {
-    const objs = JSON.parse(json);
-    this.annotations = objs
+  handleGraphConfigure() {
+    this.linkAnnotationsToNodes();
+  }
+
+  saveAnnotations() {
+    return this.annotations.map((a) => a.toJSON());
+  }
+
+  loadAnnotations(annotations) {
+    if (!annotations || !Array.isArray(annotations)) {
+      console.warn("Invalid annotations format, expected an array.");
+      return;
+    }
+    this.annotations = annotations
       .map((obj) => {
         const Ctor = AnnotationRegistry.get(obj.type);
         if (!Ctor) {
@@ -10365,6 +10384,33 @@ class ImageDisplayComponent {
       })
       .filter(Boolean);
     this.interaction.setAnnotations(this.annotations);
+  }
+
+  linkAnnotationsToNodes() {
+    const graph = this.parentWidget?.parent?.graph;
+    if (!graph) return;
+
+    for (const annotation of this.annotations) {
+      if (annotation.linkedNodeId) {
+        const node = graph.getNodeById(annotation.linkedNodeId);
+        if (node) {
+          annotation.bindToNode?.(node);
+        } else {
+          annotation.isOrphan = true;
+        }
+      }
+    }
+  }
+
+  onSerialize() {
+    return { annotations: this.saveAnnotations() };
+  }
+
+  onConfigure(info) {
+    if (info.annotations) {
+      this.loadAnnotations(info.annotations);
+    }
+    this.linkAnnotationsToNodes();
   }
 
   async setImageData(newValue) {
@@ -10471,7 +10517,7 @@ class ImageDisplayComponent {
   canvasCoordsToImageCoords(canvasX, canvasY) {
     const area = this.drawArea;
     const info = this.rawImageData?.imageInfo;
-    if (!area || !info || !info.nWidth || !info.nHeight) return null;
+    if (!area || !info || !info.nWidth || !info.nHeight) return [null, null];
     const { x, y, width, height } = area;
     const scaleX = info.nWidth / width;
     const scaleY = info.nHeight / height;
@@ -10507,7 +10553,10 @@ class ImageDisplayComponent {
   }
 
   onMouse(event, pos) {
-    if (!this.drawArea) return;
+    const area = this.drawArea;
+    const info = this.rawImageData?.imageInfo;
+    if (!area || !info || !info.nWidth || !info.nHeight) return;
+
     const { imgX, imgY, canvasX, canvasY } =
       this.getClampedImageAndCanvasCoords(pos);
 
@@ -10701,19 +10750,21 @@ class ImageDisplayComponent {
         options: [
           {
             content: "Add Point as TcVnPoint2_REAL",
-            callback: () => this.startAddAnnotation(TcVnPoint2_REAL_Tool),
+            callback: () => this.startAddAnnotation(Point_TcVnPoint2_REAL_Tool),
           },
           {
             content: "Add Point as TcVnPoint2_LREAL",
-            callback: () => this.startAddAnnotation(TcVnPoint2_LREAL_Tool),
+            callback: () =>
+              this.startAddAnnotation(Point_TcVnPoint2_LREAL_Tool),
           },
           {
             content: "Add Line as TcVnVector4_DINT",
-            callback: () => this.startAddAnnotation(TcVnVector4_DINT_Tool),
+            callback: () => this.startAddAnnotation(Line_TcVnVector4_DINT_Tool),
           },
           {
             content: "Add Rectangle as TcVnRectangle_DINT",
-            callback: () => this.startAddAnnotation(TcVnRectangle_DINT_Tool),
+            callback: () =>
+              this.startAddAnnotation(Rectangle_TcVnRectangle_DINT_Tool),
           },
         ],
       },
@@ -10758,6 +10809,10 @@ class ITcVnImageDisplayWidget extends DisplayWidget {
     });
   }
 
+  onSerialize(o) {
+    return this.imageDisplay.onSerialize(o);
+  }
+
   computeSize() {
     return this.imageDisplay.computeSize(
       ITcVnImageDisplayWidget.DEFAULT_SIZE[0],
@@ -10790,6 +10845,10 @@ class ITcVnImageDisplayWidget extends DisplayWidget {
   getContextMenuOptions(event, localMouse, node) {
     return this.imageDisplay.getContextMenuOptions(event, localMouse, node);
   }
+
+  onConfigure(info) {
+    this.imageDisplay.onConfigure(info);
+  }
 }
 
 class ITcVnImageControlWidget extends ControlWidget {
@@ -10812,6 +10871,10 @@ class ITcVnImageControlWidget extends ControlWidget {
       await this.imageDisplay.setImageData(newValue);
       this.parent.setDirtyCanvas(true, true);
     });
+  }
+
+  onSerialize(o) {
+    return this.imageDisplay.onSerialize(o);
   }
 
   computeSize() {
@@ -10873,6 +10936,10 @@ class ITcVnImageControlWidget extends ControlWidget {
 
   getContextMenuOptions(event, localMouse, node) {
     return this.imageDisplay.getContextMenuOptions(event, localMouse, node);
+  }
+
+  onConfigure(info) {
+    this.imageDisplay.onConfigure(info);
   }
 }
 

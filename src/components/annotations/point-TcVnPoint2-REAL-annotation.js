@@ -2,23 +2,23 @@ import { Annotation } from "./base.js";
 import { AnnotationRegistry } from "./annotation-registry.js";
 import { annotationTheme } from "./theme.js";
 
-export class TcVnPoint2_REAL_Annotation extends Annotation {
-  static type = "TcVnPoint2_REAL";
+export class Point_TcVnPoint2_REAL_Annotation extends Annotation {
+  static type = "(point)TcVnPoint2_REAL";
 
   constructor(coord) {
-    super(TcVnPoint2_REAL_Annotation.type);
+    super(Point_TcVnPoint2_REAL_Annotation.type);
     this.coord = coord;
   }
 
   toJSON() {
     return {
-      type: TcVnPoint2_REAL_Annotation.type,
+      type: Point_TcVnPoint2_REAL_Annotation.type,
       coord: { ...this.coord },
     };
   }
 
   static fromJSON(data) {
-    return new TcVnPoint2_REAL_Annotation({ ...data.coord });
+    return new Point_TcVnPoint2_REAL_Annotation({ ...data.coord });
   }
 
   draw(ctx, opts = {}) {
@@ -121,6 +121,6 @@ export class TcVnPoint2_REAL_Annotation extends Annotation {
 }
 
 AnnotationRegistry.register(
-  TcVnPoint2_REAL_Annotation.type,
-  TcVnPoint2_REAL_Annotation
+  Point_TcVnPoint2_REAL_Annotation.type,
+  Point_TcVnPoint2_REAL_Annotation
 );

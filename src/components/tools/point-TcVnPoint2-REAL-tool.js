@@ -1,14 +1,14 @@
 import { AnnotationTool } from "./base-tool.js";
-import { TcVnPoint2_REAL_Annotation } from "../annotations/tcVnPoint2-REAL-annotation.js";
+import { Point_TcVnPoint2_REAL_Annotation } from "../annotations/point-TcVnPoint2-REAL-annotation.js";
 
-export class TcVnPoint2_REAL_Tool extends AnnotationTool {
+export class Point_TcVnPoint2_REAL_Tool extends AnnotationTool {
   constructor(finishCallback) {
     super(finishCallback);
     this.hover = null;
   }
 
   pointerDown(pos, imageCoords) {
-    const annotation = new TcVnPoint2_REAL_Annotation({
+    const annotation = new Point_TcVnPoint2_REAL_Annotation({
       ...pos,
       ...imageCoords,
     });
@@ -23,7 +23,7 @@ export class TcVnPoint2_REAL_Tool extends AnnotationTool {
   draw(ctx, opts) {
     super.draw(ctx, opts);
     if (this.hover) {
-      TcVnPoint2_REAL_Annotation.drawGhostHandle(ctx, this.hover);
+      Point_TcVnPoint2_REAL_Annotation.drawGhostHandle(ctx, this.hover);
     }
   }
 }
