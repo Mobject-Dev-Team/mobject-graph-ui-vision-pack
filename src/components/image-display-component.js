@@ -4,12 +4,11 @@ import { ItcVnImageDataDecoder } from "../utils/itcvnimagedata-decoder.js";
 import { clamp } from "mobject-graph-ui";
 
 import { CanvasInteractionManager } from "./canvas-interaction-manager.js";
-import { PointTool } from "./tools/point-tool.js";
-import { LineTool } from "./tools/line-tool.js";
-import { RectangleTool } from "./tools/rectangle-tool.js";
-import { PointAnnotation } from "./annotations/point.js";
-import { LineAnnotation } from "./annotations/line.js";
-import { RectangleAnnotation } from "./annotations/rectangle.js";
+import { TcVnPoint2_REAL_Tool } from "./tools/tcVnPoint2-REAL-tool.js";
+import { TcVnPoint2_LREAL_Tool } from "./tools/tcVnPoint2-LREAL-tool.js";
+import { TcVnVector4_DINT_Tool } from "./tools/TcVnVector4-DINT-tool.js";
+import { TcVnRectangle_DINT_Tool } from "./tools/tcVnRectangle-DINT-tool.js";
+import { AnnotationRegistry } from "./annotations/annotation-registry.js";
 
 export class ImageDisplayComponent {
   static DEFAULT_IMAGE_DATA = {
@@ -34,7 +33,8 @@ export class ImageDisplayComponent {
     imageData: "",
   };
 
-  constructor({ margin = 5, imageTopPadding = 1 } = {}) {
+  constructor(parentWidget, { margin = 5, imageTopPadding = 1 } = {}) {
+    this.parentWidget = parentWidget;
     this.margin = margin;
     this.imageTopPadding = imageTopPadding;
     this.displayImage = new Image();
@@ -46,7 +46,6 @@ export class ImageDisplayComponent {
     this.currentLoadId = 0;
     this.interaction = new CanvasInteractionManager();
     this.annotations = [];
-    this.activeAnnotation = null;
 
     this.interaction.setImageToCanvasFunc(
       this.imageCoordsToCanvasCoords.bind(this)
@@ -58,9 +57,7 @@ export class ImageDisplayComponent {
     // Wire ESC and contextmenu for cancel
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        this.interaction.cancelCurrentAction();
-        this.activeAnnotation = null;
-        this.requestRedraw && this.requestRedraw();
+        this.interaction.cancelCurrentTool();
       }
     });
   }
@@ -71,19 +68,17 @@ export class ImageDisplayComponent {
 
   loadAnnotations(json) {
     const objs = JSON.parse(json);
-    const AnnotationTypes = {
-      point: PointAnnotation,
-      line: LineAnnotation,
-      rectangle: RectangleAnnotation,
-    };
     this.annotations = objs
       .map((obj) => {
-        const Ctor = AnnotationTypes[obj.type];
-        return Ctor ? Ctor.fromJSON(obj) : null;
+        const Ctor = AnnotationRegistry.get(obj.type);
+        if (!Ctor) {
+          console.warn(`Unknown annotation type: ${obj.type}`);
+          return null;
+        }
+        return Ctor.fromJSON(obj);
       })
       .filter(Boolean);
     this.interaction.setAnnotations(this.annotations);
-    this.requestRedraw && this.requestRedraw();
   }
 
   async setImageData(newValue) {
@@ -124,6 +119,7 @@ export class ImageDisplayComponent {
     this.cachedComponentSize = result;
     return result;
   }
+
   getMetaHeight() {
     return this.metaHeight || 0;
   }
@@ -244,9 +240,6 @@ export class ImageDisplayComponent {
         this.interaction.pointerUp({ canvasX, canvasY }, { imgX, imgY });
         break;
     }
-    // Get preview annotation (if any) from interaction:
-    this.activeAnnotation = this.interaction.activeAnnotation;
-    this.requestRedraw && this.requestRedraw();
   }
 
   onMouseOver(event, pos, parentNode, value) {
@@ -256,7 +249,9 @@ export class ImageDisplayComponent {
     if (this.isMouseInDrawArea(canvasX, canvasY)) {
       this.tooltipCoords = { imgX, imgY, canvasX, canvasY };
     }
+    this.interaction.pointerOver({ canvasX, canvasY }, { imgX, imgY });
   }
+
   draw(ctx, parentNode, availableWidth, startY, suggestedHeight, opts = {}) {
     const { placeholderText = "No image" } = opts;
 
@@ -299,13 +294,12 @@ export class ImageDisplayComponent {
         imageToCanvas: this.imageCoordsToCanvasCoords.bind(this),
       });
     }
-    // Draw preview annotation
-    if (this.activeAnnotation) {
-      this.activeAnnotation.draw(ctx, {
-        preview: true,
-        imageToCanvas: this.imageCoordsToCanvasCoords.bind(this),
-      });
-    }
+
+    // Draw interaction state (e.g. point being added)
+    this.interaction.draw(ctx, {
+      imageToCanvas: this.imageCoordsToCanvasCoords.bind(this),
+      canvasToImage: this.canvasCoordsToImageCoords.bind(this),
+    });
 
     // Draw meta info (below the image)
     UiVisionDraw.drawMetaInfoBox(
@@ -344,6 +338,28 @@ export class ImageDisplayComponent {
     const y = localMouse[1];
 
     if (!this.isMouseInDrawArea(x, y)) return null;
+
+    if (this.interaction.usingTool) {
+      return [
+        {
+          content: "Cancel",
+          callback: () => this.interaction.cancelCurrentTool(),
+        },
+      ];
+    }
+
+    const hitAnnotation = this.interaction.selectAnnotationAt({
+      canvasX: x,
+      canvasY: y,
+    });
+    if (hitAnnotation) {
+      return [
+        {
+          content: "🗑️ Delete",
+          callback: () => this.deleteAnnotation(hitAnnotation),
+        },
+      ];
+    }
 
     const pixelCoords = this.tooltipCoords;
     const pixel = pixelCoords
@@ -392,22 +408,26 @@ export class ImageDisplayComponent {
     });
 
     menu.push({
-      content: "Add Shapes",
+      content: "Add Node",
       has_submenu: true,
       submenu: {
-        title: "Add Shapes",
+        title: "Add Node",
         options: [
           {
-            content: "Add Point",
-            callback: () => this._startAddAnnotation("point"),
+            content: "Add Point as TcVnPoint2_REAL",
+            callback: () => this.startAddAnnotation(TcVnPoint2_REAL_Tool),
           },
           {
-            content: "Add Line",
-            callback: () => this._startAddAnnotation("line"),
+            content: "Add Point as TcVnPoint2_LREAL",
+            callback: () => this.startAddAnnotation(TcVnPoint2_LREAL_Tool),
           },
           {
-            content: "Add Rectangle",
-            callback: () => this._startAddAnnotation("rectangle"),
+            content: "Add Line as TcVnVector4_DINT",
+            callback: () => this.startAddAnnotation(TcVnVector4_DINT_Tool),
+          },
+          {
+            content: "Add Rectangle as TcVnRectangle_DINT",
+            callback: () => this.startAddAnnotation(TcVnRectangle_DINT_Tool),
           },
         ],
       },
@@ -416,25 +436,26 @@ export class ImageDisplayComponent {
     return menu;
   }
 
-  // annotation management
+  startAddAnnotation(ToolClass) {
+    if (!ToolClass) return;
 
-  _startAddAnnotation(type) {
-    let tool;
     const finish = (annotation) => {
       this.annotations.push(annotation);
       this.interaction.setAnnotations(this.annotations);
-      this.activeAnnotation = null;
-      this.requestRedraw && this.requestRedraw();
-      // After finishing, return to "null tool" (no drawing)
-      this.interaction.setTool(null);
+      this.parentWidget?.requestRedraw();
+      this.interaction.clearTool();
     };
-    if (type === "point") {
-      tool = new PointTool(finish);
-    } else if (type === "line") {
-      tool = new LineTool(finish);
-    } else if (type === "rectangle") {
-      tool = new RectangleTool(finish);
-    }
+
+    const tool = new ToolClass(finish);
     this.interaction.setTool(tool);
+  }
+
+  deleteAnnotation(annotation) {
+    const idx = this.annotations.indexOf(annotation);
+    if (idx !== -1) {
+      annotation.onDelete?.();
+      this.annotations.splice(idx, 1);
+      this.parentWidget?.requestRedraw();
+    }
   }
 }

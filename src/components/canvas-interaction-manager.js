@@ -1,21 +1,38 @@
 export class CanvasInteractionManager {
   constructor() {
     this.currentTool = null;
-    this.mode = "select"; // start in select mode
     this.selectedAnnotation = null;
     this.draggingHandle = null;
-    this.canvasToImage = null; // Function to convert canvas coords to image coords
-    this.imageToCanvas = null; // Function to convert image coords to canvas coords
+    this.canvasToImage = null;
+    this.imageToCanvas = null;
+    this.annotations = [];
   }
+
   setTool(toolInstance) {
     this.currentTool = toolInstance;
-    this.mode = toolInstance ? "draw" : "select";
     this.selectedAnnotation = null;
     this.draggingHandle = null;
   }
 
+  clearTool() {
+    this.currentTool = null;
+    this.selectedAnnotation = null;
+    this.draggingHandle = null;
+  }
+
+  cancelCurrentTool() {
+    if (this.currentTool) {
+      this.currentTool.cancel();
+    }
+    this.clearTool();
+  }
+
+  get usingTool() {
+    return this.currentTool;
+  }
+
   setAnnotations(annotations) {
-    this.annotations = annotations; // for hit-testing
+    this.annotations = annotations;
   }
 
   setImageToCanvasFunc(func) {
@@ -25,9 +42,29 @@ export class CanvasInteractionManager {
     this.canvasToImage = func;
   }
 
+  selectAnnotationAt(pos) {
+    if (!this.annotations) return null;
+
+    let selected = null;
+
+    for (let i = this.annotations.length - 1; i >= 0; i--) {
+      const annotation = this.annotations[i];
+      if (annotation.hitTest(pos, this.imageToCanvas)) {
+        selected = annotation;
+        annotation.selected = true;
+      } else {
+        annotation.selected = false;
+      }
+    }
+
+    this.selectedAnnotation = selected;
+    this.draggingHandle = null;
+    return selected;
+  }
+
   pointerDown(pos, imageCoords, button = 0) {
-    if (this.mode === "draw") {
-      this.currentTool?.pointerDown(pos, imageCoords, button);
+    if (this.currentTool) {
+      this.currentTool.pointerDown(pos, imageCoords, button);
       return;
     }
     if (!this.annotations) return;
@@ -36,44 +73,43 @@ export class CanvasInteractionManager {
     let selectedAnnotation = null;
     let draggingHandle = null;
 
-    // Go backwards for z-order (topmost first)
     for (let i = this.annotations.length - 1; i >= 0; i--) {
-      const ann = this.annotations[i];
+      const annotation = this.annotations[i];
       if (!found) {
-        // Only first annotation that is hit gets selected
-        const handleId = ann.hitTestHandle(pos, this.imageToCanvas);
+        const handleId = annotation.hitTestHandle(pos, this.imageToCanvas);
         if (handleId) {
-          selectedAnnotation = ann;
+          selectedAnnotation = annotation;
           draggingHandle = handleId;
-          ann.selected = true;
+          annotation.selected = true;
           found = true;
           continue;
-        } else if (ann.hitTest && ann.hitTest(pos, this.imageToCanvas)) {
-          selectedAnnotation = ann;
+        } else if (
+          annotation.hitTest &&
+          annotation.hitTest(pos, this.imageToCanvas)
+        ) {
+          selectedAnnotation = annotation;
           draggingHandle = null;
-          ann.selected = true;
+          annotation.selected = true;
           found = true;
           continue;
         }
       }
-      // All others (including overlapping ones) are NOT selected
-      ann.selected = false;
+      annotation.selected = false;
     }
 
     this.selectedAnnotation = selectedAnnotation;
     this.draggingHandle = draggingHandle;
 
-    // If nothing hit, clear all selections
     if (!selectedAnnotation) {
       this.selectedAnnotation = null;
       this.draggingHandle = null;
-      for (const ann of this.annotations) ann.selected = false;
+      for (const annotation of this.annotations) annotation.selected = false;
     }
   }
 
   pointerMove(pos, imageCoords) {
-    if (this.mode === "draw") {
-      this.currentTool?.pointerMove(pos, imageCoords);
+    if (this.currentTool) {
+      this.currentTool.pointerMove(pos, imageCoords);
       return;
     }
 
@@ -84,52 +120,29 @@ export class CanvasInteractionManager {
         imgY: imgCoords[1],
       });
     }
-    // // If dragging
-    // if (this.selectedAnnotation) {
-    //   // Move handle or whole annotation
-    //   if (this.draggingHandle) {
-    //     if (this.selectedAnnotation.type === "line") {
-    //       if (this.draggingHandle === "start")
-    //         Object.assign(this.selectedAnnotation.start, pos, imageCoords);
-    //       if (this.draggingHandle === "end")
-    //         Object.assign(this.selectedAnnotation.end, pos, imageCoords);
-    //     }
-    //     if (this.selectedAnnotation.type === "rectangle") {
-    //       if (this.draggingHandle === "start")
-    //         Object.assign(this.selectedAnnotation.start, pos, imageCoords);
-    //       if (this.draggingHandle === "end")
-    //         Object.assign(this.selectedAnnotation.end, pos, imageCoords);
-    //     }
-    //     if (
-    //       this.selectedAnnotation.type === "point" &&
-    //       this.draggingHandle === "point"
-    //     ) {
-    //       Object.assign(this.selectedAnnotation.coord, pos, imageCoords);
-    //     }
-    //   }
-    // }
   }
 
   pointerUp(pos, imageCoords) {
-    if (this.mode === "draw") {
-      this.currentTool?.pointerUp(pos, imageCoords);
+    if (this.currentTool) {
+      this.currentTool.pointerUp(pos, imageCoords);
       return;
     }
-    // Done dragging
     this.draggingHandle = null;
-    this.dragOffset = null;
   }
 
   get activeAnnotation() {
     return this.currentTool?.activeAnnotation || null;
   }
 
-  cancelCurrentAction() {
-    if (this.mode === "draw") {
-      this.currentTool?.cancel();
+  pointerOver(pos, imageCoords) {
+    if (this.currentTool && typeof this.currentTool.setHover === "function") {
+      this.currentTool.setHover(pos, imageCoords);
     }
-    this.draggingHandle = null;
-    this.dragOffset = null;
-    this.selectedAnnotation = null;
+  }
+
+  draw(ctx, opts) {
+    if (this.currentTool && typeof this.currentTool.draw === "function") {
+      this.currentTool.draw(ctx, { ...opts, preview: true });
+    }
   }
 }

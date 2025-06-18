@@ -11,7 +11,7 @@ export class ITcVnImageDisplayWidget extends DisplayWidget {
   constructor(name, parent, options) {
     super(name, parent, options);
     this.label = "Image Display";
-    this.imageDisplay = new ImageDisplayComponent({});
+    this.imageDisplay = new ImageDisplayComponent(this, {});
     this.on("valueChanged", async (newValue, oldValue) => {
       await this.imageDisplay.setImageData(newValue);
     });
@@ -57,7 +57,7 @@ export class ITcVnImageControlWidget extends ControlWidget {
   constructor(name, property, parameter, content) {
     super(name, property, parameter, content);
     this.label = "Image Control";
-    this.imageDisplay = new ImageDisplayComponent({});
+    this.imageDisplay = new ImageDisplayComponent(this, {});
     this.droppedImageSize = ITcVnImageControlWidget.DEFAULT_SIZE;
 
     this.FILE_HANDLERS = {

@@ -8,10 +8,10 @@ export class Annotation {
   hitTest(pos) {
     return false;
   }
-  
+
   hitTestHandle(pos) {
     return null;
-  } 
+  }
 
   toJSON() {
     return { type: this.type };
@@ -19,5 +19,9 @@ export class Annotation {
 
   static fromJSON(data) {
     return new Annotation(data.type);
+  }
+
+  onDelete() {
+    // Placeholder for cleanup logic if needed
   }
 }

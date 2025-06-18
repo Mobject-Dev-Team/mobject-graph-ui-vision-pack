@@ -9030,6 +9030,66 @@
 
       return text.slice(0, low - 1) + ellipsis;
     }
+
+    static drawDashedLine(
+      ctx,
+      x1,
+      y1,
+      x2,
+      y2,
+      foreground = "#FFF",
+      background = "#000",
+      dash = [3, 3],
+      width = 1
+    ) {
+      ctx.save();
+      ctx.strokeStyle = foreground;
+      ctx.lineWidth = width;
+      ctx.setLineDash(dash);
+      ctx.lineDashOffset = 0;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      ctx.restore();
+      ctx.save();
+      ctx.strokeStyle = background;
+      ctx.lineWidth = width;
+      ctx.setLineDash(dash);
+      ctx.lineDashOffset = dash[0];
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    static drawDashedRect(
+      ctx,
+      x,
+      y,
+      w,
+      h,
+      foreground = "#FFF",
+      background = "#000",
+      dash = [6, 6],
+      width = 0.5
+    ) {
+      ctx.save();
+      ctx.strokeStyle = foreground;
+      ctx.lineWidth = width;
+      ctx.setLineDash(dash);
+      ctx.lineDashOffset = 0;
+      ctx.strokeRect(x, y, w, h);
+      ctx.restore();
+      ctx.save();
+      ctx.strokeStyle = background;
+      ctx.lineWidth = width;
+      ctx.setLineDash(dash);
+      ctx.lineDashOffset = dash[0];
+      ctx.strokeRect(x, y, w, h);
+      ctx.restore();
+    }
   }
 
   async function iTcVnImageToImage(itcvnimage) {
@@ -9237,21 +9297,38 @@
   class CanvasInteractionManager {
     constructor() {
       this.currentTool = null;
-      this.mode = "select"; // start in select mode
       this.selectedAnnotation = null;
       this.draggingHandle = null;
-      this.canvasToImage = null; // Function to convert canvas coords to image coords
-      this.imageToCanvas = null; // Function to convert image coords to canvas coords
+      this.canvasToImage = null;
+      this.imageToCanvas = null;
+      this.annotations = [];
     }
+
     setTool(toolInstance) {
       this.currentTool = toolInstance;
-      this.mode = toolInstance ? "draw" : "select";
       this.selectedAnnotation = null;
       this.draggingHandle = null;
     }
 
+    clearTool() {
+      this.currentTool = null;
+      this.selectedAnnotation = null;
+      this.draggingHandle = null;
+    }
+
+    cancelCurrentTool() {
+      if (this.currentTool) {
+        this.currentTool.cancel();
+      }
+      this.clearTool();
+    }
+
+    get usingTool() {
+      return this.currentTool;
+    }
+
     setAnnotations(annotations) {
-      this.annotations = annotations; // for hit-testing
+      this.annotations = annotations;
     }
 
     setImageToCanvasFunc(func) {
@@ -9261,9 +9338,29 @@
       this.canvasToImage = func;
     }
 
+    selectAnnotationAt(pos) {
+      if (!this.annotations) return null;
+
+      let selected = null;
+
+      for (let i = this.annotations.length - 1; i >= 0; i--) {
+        const annotation = this.annotations[i];
+        if (annotation.hitTest(pos, this.imageToCanvas)) {
+          selected = annotation;
+          annotation.selected = true;
+        } else {
+          annotation.selected = false;
+        }
+      }
+
+      this.selectedAnnotation = selected;
+      this.draggingHandle = null;
+      return selected;
+    }
+
     pointerDown(pos, imageCoords, button = 0) {
-      if (this.mode === "draw") {
-        this.currentTool?.pointerDown(pos, imageCoords, button);
+      if (this.currentTool) {
+        this.currentTool.pointerDown(pos, imageCoords, button);
         return;
       }
       if (!this.annotations) return;
@@ -9272,44 +9369,43 @@
       let selectedAnnotation = null;
       let draggingHandle = null;
 
-      // Go backwards for z-order (topmost first)
       for (let i = this.annotations.length - 1; i >= 0; i--) {
-        const ann = this.annotations[i];
+        const annotation = this.annotations[i];
         if (!found) {
-          // Only first annotation that is hit gets selected
-          const handleId = ann.hitTestHandle(pos, this.imageToCanvas);
+          const handleId = annotation.hitTestHandle(pos, this.imageToCanvas);
           if (handleId) {
-            selectedAnnotation = ann;
+            selectedAnnotation = annotation;
             draggingHandle = handleId;
-            ann.selected = true;
+            annotation.selected = true;
             found = true;
             continue;
-          } else if (ann.hitTest && ann.hitTest(pos, this.imageToCanvas)) {
-            selectedAnnotation = ann;
+          } else if (
+            annotation.hitTest &&
+            annotation.hitTest(pos, this.imageToCanvas)
+          ) {
+            selectedAnnotation = annotation;
             draggingHandle = null;
-            ann.selected = true;
+            annotation.selected = true;
             found = true;
             continue;
           }
         }
-        // All others (including overlapping ones) are NOT selected
-        ann.selected = false;
+        annotation.selected = false;
       }
 
       this.selectedAnnotation = selectedAnnotation;
       this.draggingHandle = draggingHandle;
 
-      // If nothing hit, clear all selections
       if (!selectedAnnotation) {
         this.selectedAnnotation = null;
         this.draggingHandle = null;
-        for (const ann of this.annotations) ann.selected = false;
+        for (const annotation of this.annotations) annotation.selected = false;
       }
     }
 
     pointerMove(pos, imageCoords) {
-      if (this.mode === "draw") {
-        this.currentTool?.pointerMove(pos, imageCoords);
+      if (this.currentTool) {
+        this.currentTool.pointerMove(pos, imageCoords);
         return;
       }
 
@@ -9320,53 +9416,30 @@
           imgY: imgCoords[1],
         });
       }
-      // // If dragging
-      // if (this.selectedAnnotation) {
-      //   // Move handle or whole annotation
-      //   if (this.draggingHandle) {
-      //     if (this.selectedAnnotation.type === "line") {
-      //       if (this.draggingHandle === "start")
-      //         Object.assign(this.selectedAnnotation.start, pos, imageCoords);
-      //       if (this.draggingHandle === "end")
-      //         Object.assign(this.selectedAnnotation.end, pos, imageCoords);
-      //     }
-      //     if (this.selectedAnnotation.type === "rectangle") {
-      //       if (this.draggingHandle === "start")
-      //         Object.assign(this.selectedAnnotation.start, pos, imageCoords);
-      //       if (this.draggingHandle === "end")
-      //         Object.assign(this.selectedAnnotation.end, pos, imageCoords);
-      //     }
-      //     if (
-      //       this.selectedAnnotation.type === "point" &&
-      //       this.draggingHandle === "point"
-      //     ) {
-      //       Object.assign(this.selectedAnnotation.coord, pos, imageCoords);
-      //     }
-      //   }
-      // }
     }
 
     pointerUp(pos, imageCoords) {
-      if (this.mode === "draw") {
-        this.currentTool?.pointerUp(pos, imageCoords);
+      if (this.currentTool) {
+        this.currentTool.pointerUp(pos, imageCoords);
         return;
       }
-      // Done dragging
       this.draggingHandle = null;
-      this.dragOffset = null;
     }
 
     get activeAnnotation() {
       return this.currentTool?.activeAnnotation || null;
     }
 
-    cancelCurrentAction() {
-      if (this.mode === "draw") {
-        this.currentTool?.cancel();
+    pointerOver(pos, imageCoords) {
+      if (this.currentTool && typeof this.currentTool.setHover === "function") {
+        this.currentTool.setHover(pos, imageCoords);
       }
-      this.draggingHandle = null;
-      this.dragOffset = null;
-      this.selectedAnnotation = null;
+    }
+
+    draw(ctx, opts) {
+      if (this.currentTool && typeof this.currentTool.draw === "function") {
+        this.currentTool.draw(ctx, { ...opts, preview: true });
+      }
     }
   }
 
@@ -9383,6 +9456,12 @@
     cancel() {
       this.activeAnnotation = null;
     }
+
+    draw(ctx, opts) {
+      if (this.activeAnnotation) {
+        this.activeAnnotation.draw(ctx, { ...opts, preview: true });
+      }
+    }
   }
 
   class Annotation {
@@ -9395,10 +9474,10 @@
     hitTest(pos) {
       return false;
     }
-    
+
     hitTestHandle(pos) {
       return null;
-    } 
+    }
 
     toJSON() {
       return { type: this.type };
@@ -9407,23 +9486,89 @@
     static fromJSON(data) {
       return new Annotation(data.type);
     }
+
+    onDelete() {
+      // Placeholder for cleanup logic if needed
+    }
   }
 
-  class PointAnnotation extends Annotation {
+  class AnnotationRegistry {
+    static registry = new Map();
+
+    static register(type, Ctor) {
+      this.registry.set(type, Ctor);
+    }
+
+    static get(type) {
+      return this.registry.get(type);
+    }
+  }
+
+  const annotationTheme = {
+    point: {
+      size: 9,
+      crossStroke: "#000",
+      crossLength: 7,
+      crossWidth: 1,
+      crossColor: "#000",
+      handle: {
+        size: 9,
+        stroke: "#000",
+        selectedStroke: "#0FF",
+        fill: "rgba(255,255,255,0.5)",
+        lineWidth: 1,
+      },
+    },
+
+    line: {
+      lineWidth: 1,
+      dash: [6, 6],
+      dashFg: "#000",
+      dashBg: "#FFF",
+      selectedDashFg: "#000",
+      selectedDashBg: "#0FF",
+      handle: {
+        size: 9,
+        stroke: "#000",
+        selectedStroke: "#0FF",
+        fill: "rgba(255,255,255,0.5)",
+        lineWidth: 1,
+      },
+    },
+
+    rectangle: {
+      lineWidth: 1,
+      dash: [6, 6],
+      dashFg: "#000",
+      dashBg: "#FFF",
+      selectedDashFg: "#000",
+      selectedDashBg: "#0FF",
+      handle: {
+        size: 9,
+        stroke: "#000",
+        fill: "rgba(255,255,255,0.5)",
+        lineWidth: 1,
+      },
+    },
+  };
+
+  class TcVnPoint2_REAL_Annotation extends Annotation {
+    static type = "TcVnPoint2_REAL";
+
     constructor(coord) {
-      super("point");
+      super(TcVnPoint2_REAL_Annotation.type);
       this.coord = coord;
     }
 
     toJSON() {
       return {
-        type: "point",
+        type: TcVnPoint2_REAL_Annotation.type,
         coord: { ...this.coord },
       };
     }
 
     static fromJSON(data) {
-      return new PointAnnotation({ ...data.coord });
+      return new TcVnPoint2_REAL_Annotation({ ...data.coord });
     }
 
     draw(ctx, opts = {}) {
@@ -9432,37 +9577,67 @@
         this.coord.imgX,
         this.coord.imgY
       );
+      const theme = annotationTheme.point;
+      const handleTheme = theme.handle;
+
       ctx.save();
+      ctx.translate(0.5, 0.5);
+
+      // Crosshair lines
+      const crossLen = theme.crossLength ;
+      const crossWidth = theme.crossWidth ;
+      ctx.strokeStyle = theme.crossStroke;
+      ctx.lineWidth = crossWidth;
+
+      // Horizontal line
       ctx.beginPath();
-      ctx.arc(canvasX, canvasY, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = this.selected ? "#0FF" : "#FFF";
-      ctx.strokeStyle = "#333";
-      ctx.lineWidth = 2;
+      ctx.moveTo(canvasX - crossLen, canvasY);
+      ctx.lineTo(canvasX + crossLen, canvasY);
+      ctx.stroke();
+
+      // Vertical line
+      ctx.beginPath();
+      ctx.moveTo(canvasX, canvasY - crossLen);
+      ctx.lineTo(canvasX, canvasY + crossLen);
+      ctx.stroke();
+
+      // Show larger square
+      ctx.beginPath();
+      ctx.rect(
+        canvasX - theme.size / 2,
+        canvasY - theme.size / 2,
+        theme.size,
+        theme.size
+      );
+      ctx.fillStyle = handleTheme.fill;
+      ctx.strokeStyle = this.selected
+        ? handleTheme.selectedStroke
+        : handleTheme.stroke;
+      ctx.lineWidth = handleTheme.lineWidth;
       ctx.fill();
       ctx.stroke();
-      if (this.selected) {
-        ctx.beginPath();
-        ctx.arc(canvasX, canvasY, 8, 0, 2 * Math.PI);
-        ctx.strokeStyle = "#0FF";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
+
       ctx.restore();
     }
 
     hitTest(pos, imageToCanvas) {
       const handleCanvas = imageToCanvas(this.coord.imgX, this.coord.imgY);
-      const dx = pos.canvasX - handleCanvas.canvasX;
-      const dy = pos.canvasY - handleCanvas.canvasY;
-      return Math.sqrt(dx * dx + dy * dy) <= 8;
+      const size = annotationTheme.point.handle.size;
+      // Use the handle area for hit test, which is generous
+      return (
+        Math.abs(pos.canvasX - handleCanvas.canvasX) < size / 2 + 2 &&
+        Math.abs(pos.canvasY - handleCanvas.canvasY) < size / 2 + 2
+      );
     }
 
     hitTestHandle(pos, imageToCanvas) {
-      // pos = {canvasX, canvasY}
       const handleCanvas = imageToCanvas(this.coord.imgX, this.coord.imgY);
-      const dx = pos.canvasX - handleCanvas.canvasX;
-      const dy = pos.canvasY - handleCanvas.canvasY;
-      if (Math.sqrt(dx * dx + dy * dy) < 8) return "point";
+      const size = annotationTheme.point.handle.size;
+      if (
+        Math.abs(pos.canvasX - handleCanvas.canvasX) < size / 2 + 2 &&
+        Math.abs(pos.canvasY - handleCanvas.canvasY) < size / 2 + 2
+      )
+        return "point";
       return null;
     }
 
@@ -9472,55 +9647,281 @@
         this.coord.imgY = imgCoords.imgY;
       }
     }
-  }
 
-  class PointTool extends AnnotationTool {
-    pointerDown(pos, imageCoords) {
-      const annotation = new PointAnnotation({ ...pos, ...imageCoords });
-      this.onFinish?.(annotation);
+    static drawGhostHandle(ctx, pt) {
+      const theme = annotationTheme.point;
+      const handleTheme = theme.handle;
+      ctx.beginPath();
+      ctx.rect(
+        pt.canvasX - theme.size / 2,
+        pt.canvasY - theme.size / 2,
+        theme.size,
+        theme.size
+      );
+      ctx.fillStyle = handleTheme.fill;
+      ctx.strokeStyle = this.selected
+        ? handleTheme.selectedStroke
+        : handleTheme.stroke;
+      ctx.lineWidth = handleTheme.lineWidth;
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
     }
   }
 
-  class LineAnnotation extends Annotation {
-    constructor(start, end) {
-      super("line");
-      this.start = start; // {imgX, imgY}
-      this.end = end; // {imgX, imgY}
+  AnnotationRegistry.register(
+    TcVnPoint2_REAL_Annotation.type,
+    TcVnPoint2_REAL_Annotation
+  );
+
+  class TcVnPoint2_REAL_Tool extends AnnotationTool {
+    constructor(finishCallback) {
+      super(finishCallback);
+      this.hover = null;
+    }
+
+    pointerDown(pos, imageCoords) {
+      const annotation = new TcVnPoint2_REAL_Annotation({
+        ...pos,
+        ...imageCoords,
+      });
+      this.onFinish?.(annotation);
+      this.hover = null;
+    }
+
+    setHover(pos, imageCoords) {
+      this.hover = { ...pos, ...imageCoords };
+    }
+
+    draw(ctx, opts) {
+      super.draw(ctx, opts);
+      if (this.hover) {
+        TcVnPoint2_REAL_Annotation.drawGhostHandle(ctx, this.hover);
+      }
+    }
+  }
+
+  class TcVnPoint2_LREAL_Annotation extends Annotation {
+    static type = "TcVnPoint2_LREAL";
+
+    constructor(coord) {
+      super(TcVnPoint2_LREAL_Annotation.type);
+      this.coord = coord;
     }
 
     toJSON() {
       return {
-        type: "line",
+        type: TcVnPoint2_LREAL_Annotation.type,
+        coord: { ...this.coord },
+      };
+    }
+
+    static fromJSON(data) {
+      return new TcVnPoint2_LREAL_Annotation({ ...data.coord });
+    }
+
+    draw(ctx, opts = {}) {
+      const { imageToCanvas } = opts;
+      const { canvasX, canvasY } = imageToCanvas(
+        this.coord.imgX,
+        this.coord.imgY
+      );
+      const theme = annotationTheme.point;
+      const handleTheme = theme.handle;
+
+      ctx.save();
+      ctx.translate(0.5, 0.5);
+
+      // Crosshair lines
+      const crossLen = theme.crossLength ;
+      const crossWidth = theme.crossWidth ;
+      ctx.strokeStyle = theme.crossStroke;
+      ctx.lineWidth = crossWidth;
+
+      // Horizontal line
+      ctx.beginPath();
+      ctx.moveTo(canvasX - crossLen, canvasY);
+      ctx.lineTo(canvasX + crossLen, canvasY);
+      ctx.stroke();
+
+      // Vertical line
+      ctx.beginPath();
+      ctx.moveTo(canvasX, canvasY - crossLen);
+      ctx.lineTo(canvasX, canvasY + crossLen);
+      ctx.stroke();
+
+      // Show larger square
+      ctx.beginPath();
+      ctx.rect(
+        canvasX - theme.size / 2,
+        canvasY - theme.size / 2,
+        theme.size,
+        theme.size
+      );
+      ctx.fillStyle = handleTheme.fill;
+      ctx.strokeStyle = this.selected
+        ? handleTheme.selectedStroke
+        : handleTheme.stroke;
+      ctx.lineWidth = handleTheme.lineWidth;
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    hitTest(pos, imageToCanvas) {
+      const handleCanvas = imageToCanvas(this.coord.imgX, this.coord.imgY);
+      const size = annotationTheme.point.handle.size;
+      // Use the handle area for hit test, which is generous
+      return (
+        Math.abs(pos.canvasX - handleCanvas.canvasX) < size / 2 + 2 &&
+        Math.abs(pos.canvasY - handleCanvas.canvasY) < size / 2 + 2
+      );
+    }
+
+    hitTestHandle(pos, imageToCanvas) {
+      const handleCanvas = imageToCanvas(this.coord.imgX, this.coord.imgY);
+      const size = annotationTheme.point.handle.size;
+      if (
+        Math.abs(pos.canvasX - handleCanvas.canvasX) < size / 2 + 2 &&
+        Math.abs(pos.canvasY - handleCanvas.canvasY) < size / 2 + 2
+      )
+        return "point";
+      return null;
+    }
+
+    moveHandle(handleId, imgCoords) {
+      if (handleId === "point") {
+        this.coord.imgX = imgCoords.imgX;
+        this.coord.imgY = imgCoords.imgY;
+      }
+    }
+
+    static drawGhostHandle(ctx, pt) {
+      const theme = annotationTheme.point;
+      const handleTheme = theme.handle;
+      ctx.beginPath();
+      ctx.rect(
+        pt.canvasX - theme.size / 2,
+        pt.canvasY - theme.size / 2,
+        theme.size,
+        theme.size
+      );
+      ctx.fillStyle = handleTheme.fill;
+      ctx.strokeStyle = this.selected
+        ? handleTheme.selectedStroke
+        : handleTheme.stroke;
+      ctx.lineWidth = handleTheme.lineWidth;
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
+    }
+  }
+
+  AnnotationRegistry.register(
+    TcVnPoint2_LREAL_Annotation.type,
+    TcVnPoint2_LREAL_Annotation
+  );
+
+  class TcVnPoint2_LREAL_Tool extends AnnotationTool {
+    constructor(finishCallback) {
+      super(finishCallback);
+      this.hover = null;
+    }
+
+    pointerDown(pos, imageCoords) {
+      const annotation = new TcVnPoint2_LREAL_Annotation({
+        ...pos,
+        ...imageCoords,
+      });
+      this.onFinish?.(annotation);
+      this.hover = null;
+    }
+
+    setHover(pos, imageCoords) {
+      this.hover = { ...pos, ...imageCoords };
+    }
+
+    draw(ctx, opts) {
+      super.draw(ctx, opts);
+      if (this.hover) {
+        TcVnPoint2_LREAL_Annotation.drawGhostHandle(ctx, this.hover);
+      }
+    }
+  }
+
+  class TcVnVector4_DINT_Annotation extends Annotation {
+    static type = "TcVnVector4_DINT";
+    constructor(start, end) {
+      super(TcVnVector4_DINT_Annotation.type);
+      this.start = start;
+      this.end = end;
+    }
+
+    toJSON() {
+      return {
+        type: TcVnVector4_DINT_Annotation.type,
         start: { ...this.start },
         end: { ...this.end },
       };
     }
 
     static fromJSON(data) {
-      return new LineAnnotation({ ...data.start }, { ...data.end });
+      return new TcVnVector4_DINT_Annotation({ ...data.start }, { ...data.end });
+    }
+
+    setEnd(end) {
+      this.end = end;
     }
 
     draw(ctx, opts = {}) {
-      const { imageToCanvas } = opts;
-      // Convert img coords to canvas coords
+      const { imageToCanvas, preview } = opts;
       const a = imageToCanvas(this.start.imgX, this.start.imgY);
       const b = imageToCanvas(this.end.imgX, this.end.imgY);
 
+      const theme = annotationTheme.line;
+      // Use selected dash/fg/bg if selected, otherwise default
+      const dashFg = this.selected
+        ? theme.selectedDashFg 
+        : theme.dashFg;
+      const dashBg = this.selected
+        ? theme.selectedDashBg 
+        : theme.dashBg;
+      const dash = theme.dash;
+      const lineWidth = theme.lineWidth;
+
       ctx.save();
-      ctx.strokeStyle = this.selected ? "#0FF" : "#FFF";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(a.canvasX, a.canvasY);
-      ctx.lineTo(b.canvasX, b.canvasY);
-      ctx.stroke();
-      // Handles
-      if (this.selected) {
+      ctx.translate(0.5, 0.5);
+
+      // Draw black/white dashed line using theme
+      UiVisionDraw.drawDashedLine(
+        ctx,
+        a.canvasX,
+        a.canvasY,
+        b.canvasX,
+        b.canvasY,
+        dashBg,
+        dashFg,
+        dash,
+        lineWidth
+      );
+
+      // Handles as squares if selected
+      if (this.selected || preview) {
+        const htheme = theme.handle;
         [a, b].forEach((pt) => {
           ctx.beginPath();
-          ctx.arc(pt.canvasX, pt.canvasY, 7, 0, 2 * Math.PI);
-          ctx.fillStyle = "#FFF";
-          ctx.strokeStyle = "#0FF";
-          ctx.lineWidth = 2;
+          ctx.rect(
+            pt.canvasX - htheme.size / 2,
+            pt.canvasY - htheme.size / 2,
+            htheme.size,
+            htheme.size
+          );
+          ctx.fillStyle = htheme.fill;
+          ctx.strokeStyle = htheme.stroke;
+          ctx.lineWidth = htheme.lineWidth;
           ctx.fill();
           ctx.stroke();
         });
@@ -9528,9 +9929,7 @@
       ctx.restore();
     }
 
-    // (Optional) Hit test for endpoints and line
     hitTest(pos, imageToCanvas) {
-      // Convert endpoints to canvas coords
       const a = imageToCanvas(this.start.imgX, this.start.imgY);
       const b = imageToCanvas(this.end.imgX, this.end.imgY);
 
@@ -9540,9 +9939,10 @@
         );
       }
 
-      // Check endpoints first
-      if (Math.sqrt(dist2(a, pos)) <= 8) return true;
-      if (Math.sqrt(dist2(b, pos)) <= 8) return true;
+      // Check endpoints first (use handle size from theme)
+      const size = annotationTheme.line.handle.size;
+      if (Math.sqrt(dist2(a, pos)) <= size / 2 + 2) return true;
+      if (Math.sqrt(dist2(b, pos)) <= size / 2 + 2) return true;
 
       // Check near line segment
       const { canvasX: x1, canvasY: y1 } = a;
@@ -9559,20 +9959,22 @@
       const dist = Math.sqrt(
         (closest.canvasX - px) ** 2 + (closest.canvasY - py) ** 2
       );
-      return dist < 8;
+      return dist < size / 2 + 2;
     }
 
     hitTestHandle(pos, imageToCanvas) {
-      // pos = {canvasX, canvasY}
       const handles = [
         { handleId: "start", ...this.start },
         { handleId: "end", ...this.end },
       ];
+      const size = annotationTheme.line.handle.size;
       for (const handle of handles) {
         const { canvasX, canvasY } = imageToCanvas(handle.imgX, handle.imgY);
-        const dx = pos.canvasX - canvasX;
-        const dy = pos.canvasY - canvasY;
-        if (Math.sqrt(dx * dx + dy * dy) < 8) return handle.handleId;
+        if (
+          Math.abs(pos.canvasX - canvasX) < size / 2 + 2 &&
+          Math.abs(pos.canvasY - canvasY) < size / 2 + 2
+        )
+          return handle.handleId;
       }
       return null;
     }
@@ -9586,38 +9988,74 @@
         this.end.imgY = imgCoords.imgY;
       }
     }
+
+    static drawGhostHandle(ctx, pt) {
+      const htheme = annotationTheme.line.handle;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(
+        pt.canvasX - htheme.size / 2,
+        pt.canvasY - htheme.size / 2,
+        htheme.size,
+        htheme.size
+      );
+      ctx.fillStyle = htheme.fill;
+      ctx.strokeStyle = htheme.stroke;
+      ctx.lineWidth = htheme.lineWidth;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
-  class LineTool extends AnnotationTool {
+  AnnotationRegistry.register(
+    TcVnVector4_DINT_Annotation.type,
+    TcVnVector4_DINT_Annotation
+  );
+
+  class TcVnVector4_DINT_Tool extends AnnotationTool {
     constructor(finishCallback) {
       super(finishCallback);
       this.start = null;
+      this.hover = null;
+      this.activeAnnotation = null;
     }
 
     pointerDown(pos, imageCoords) {
       this.start = { ...pos, ...imageCoords };
-      this.activeAnnotation = null;
+      this.activeAnnotation = new TcVnVector4_DINT_Annotation(
+        this.start,
+        this.start
+      );
     }
 
     pointerMove(pos, imageCoords) {
-      if (!this.start) return;
-      this.activeAnnotation = new LineAnnotation(this.start, {
-        ...pos,
-        ...imageCoords,
-      });
+      if (!this.start || !this.activeAnnotation) return;
+      this.activeAnnotation.setEnd({ ...pos, ...imageCoords });
     }
 
     pointerUp(pos, imageCoords) {
       if (this.start && this.activeAnnotation) {
+        this.activeAnnotation.setEnd({ ...pos, ...imageCoords });
         this.onFinish?.(this.activeAnnotation);
       }
       this.start = null;
       this.activeAnnotation = null;
     }
+
+    setHover(pos, imageCoords) {
+      this.hover = { ...pos, ...imageCoords };
+    }
+
+    draw(ctx, opts) {
+      super.draw(ctx, opts);
+      if (!this.start && this.hover) {
+        TcVnVector4_DINT_Annotation.drawGhostHandle(ctx, this.hover);
+      }
+    }
   }
 
   function pointInRect(pos, a, b) {
-    // a, b, pos: all canvas coords
     const x = Math.min(a.canvasX, b.canvasX);
     const y = Math.min(a.canvasY, b.canvasY);
     const w = Math.abs(a.canvasX - b.canvasX);
@@ -9630,44 +10068,89 @@
     );
   }
 
-  class RectangleAnnotation extends Annotation {
+  class TcVnRectangle_DINT_Annotation extends Annotation {
+    static type = "TcVnRectangle_DINT";
     constructor(start, end) {
-      super("rectangle");
-      this.start = start; // {imgX, imgY}
-      this.end = end; // {imgX, imgY}
+      super(TcVnRectangle_DINT_Annotation.type);
+      this.start = start;
+      this.end = end;
     }
 
     toJSON() {
       return {
-        type: "rectangle",
+        type: TcVnRectangle_DINT_Annotation.type,
         start: { ...this.start },
         end: { ...this.end },
       };
     }
 
     static fromJSON(data) {
-      return new RectangleAnnotation({ ...data.start }, { ...data.end });
+      return new TcVnRectangle_DINT_Annotation(
+        { ...data.start },
+        { ...data.end }
+      );
+    }
+
+    setEnd(end) {
+      this.end = end;
     }
 
     draw(ctx, opts = {}) {
-      const { imageToCanvas } = opts;
+      const { imageToCanvas, preview } = opts;
       const a = imageToCanvas(this.start.imgX, this.start.imgY);
       const b = imageToCanvas(this.end.imgX, this.end.imgY);
       const x = Math.min(a.canvasX, b.canvasX);
       const y = Math.min(a.canvasY, b.canvasY);
       const w = Math.abs(a.canvasX - b.canvasX);
       const h = Math.abs(a.canvasY - b.canvasY);
+
+      const theme = annotationTheme.rectangle;
+      // Use selected dash/fg/bg if selected, otherwise default
+      const dashFg = this.selected
+        ? theme.selectedDashFg 
+        : theme.dashFg;
+      const dashBg = this.selected
+        ? theme.selectedDashBg 
+        : theme.dashBg;
+      const dash = theme.dash;
+      const lineWidth = theme.lineWidth;
+
       ctx.save();
-      ctx.strokeStyle = this.selected ? "#0FF" : "#FFF";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, w, h);
-      if (this.selected) {
-        [a, b].forEach((pt) => {
+      ctx.translate(0.5, 0.5);
+
+      // Use a double-pass dashed rectangle for BW dashes
+      UiVisionDraw.drawDashedRect(
+        ctx,
+        x,
+        y,
+        w,
+        h,
+        dashBg,
+        dashFg,
+        dash,
+        lineWidth
+      );
+
+      // Handles as squares if selected
+      if (this.selected || preview) {
+        const htheme = theme.handle;
+        const corners = [
+          { x: x, y: y, handleId: "topLeft" },
+          { x: x + w, y: y, handleId: "topRight" },
+          { x: x, y: y + h, handleId: "bottomLeft" },
+          { x: x + w, y: y + h, handleId: "bottomRight" },
+        ];
+        corners.forEach((pt) => {
           ctx.beginPath();
-          ctx.arc(pt.canvasX, pt.canvasY, 7, 0, 2 * Math.PI);
-          ctx.fillStyle = "#FFF";
-          ctx.strokeStyle = "#0FF";
-          ctx.lineWidth = 2;
+          ctx.rect(
+            pt.x - htheme.size / 2,
+            pt.y - htheme.size / 2,
+            htheme.size,
+            htheme.size
+          );
+          ctx.fillStyle = htheme.fill;
+          ctx.strokeStyle = htheme.stroke;
+          ctx.lineWidth = htheme.lineWidth;
           ctx.fill();
           ctx.stroke();
         });
@@ -9678,69 +10161,142 @@
     hitTest(pos, imageToCanvas) {
       const a = imageToCanvas(this.start.imgX, this.start.imgY);
       const b = imageToCanvas(this.end.imgX, this.end.imgY);
-      // Check handles first
-      if (
-        Math.abs(pos.canvasX - a.canvasX) <= 8 &&
-        Math.abs(pos.canvasY - a.canvasY) <= 8
-      )
-        return true;
-      if (
-        Math.abs(pos.canvasX - b.canvasX) <= 8 &&
-        Math.abs(pos.canvasY - b.canvasY) <= 8
-      )
-        return true;
+      // Check handles first (corners)
+      const theme = annotationTheme.rectangle;
+      const size = theme.handle.size ;
+      const x = Math.min(a.canvasX, b.canvasX);
+      const y = Math.min(a.canvasY, b.canvasY);
+      const w = Math.abs(a.canvasX - b.canvasX);
+      const h = Math.abs(a.canvasY - b.canvasY);
+      const handles = [
+        { x: x, y: y },
+        { x: x + w, y: y },
+        { x: x, y: y + h },
+        { x: x + w, y: y + h },
+      ];
+      for (const pt of handles) {
+        if (
+          Math.abs(pos.canvasX - pt.x) < size / 2 + 2 &&
+          Math.abs(pos.canvasY - pt.y) < size / 2 + 2
+        ) {
+          return true;
+        }
+      }
       // Inside rectangle
       return pointInRect(pos, a, b);
     }
 
     hitTestHandle(pos, imageToCanvas) {
-      // pos = {canvasX, canvasY}
+      const a = imageToCanvas(this.start.imgX, this.start.imgY);
+      const b = imageToCanvas(this.end.imgX, this.end.imgY);
+      const x = Math.min(a.canvasX, b.canvasX);
+      const y = Math.min(a.canvasY, b.canvasY);
+      const w = Math.abs(a.canvasX - b.canvasX);
+      const h = Math.abs(a.canvasY - b.canvasY);
+      const size = annotationTheme.rectangle.handle.size ;
       const handles = [
-        { handleId: "start", imgX: this.start.imgX, imgY: this.start.imgY },
-        { handleId: "end", imgX: this.end.imgX, imgY: this.end.imgY },
+        { handleId: "topLeft", x: x, y: y },
+        { handleId: "topRight", x: x + w, y: y },
+        { handleId: "bottomLeft", x: x, y: y + h },
+        { handleId: "bottomRight", x: x + w, y: y + h },
       ];
       for (const handle of handles) {
-        const canvas = imageToCanvas(handle.imgX, handle.imgY);
-        const dx = pos.canvasX - canvas.canvasX;
-        const dy = pos.canvasY - canvas.canvasY;
-        if (Math.sqrt(dx * dx + dy * dy) < 8) return handle.handleId;
+        if (
+          Math.abs(pos.canvasX - handle.x) < size / 2 + 2 &&
+          Math.abs(pos.canvasY - handle.y) < size / 2 + 2
+        ) {
+          return handle.handleId;
+        }
       }
       return null;
     }
 
     moveHandle(handleId, imgCoords) {
-      if (handleId === "start") {
-        this.start.imgX = imgCoords.imgX;
-        this.start.imgY = imgCoords.imgY;
-      } else if (handleId === "end") {
-        this.end.imgX = imgCoords.imgX;
-        this.end.imgY = imgCoords.imgY;
+      switch (handleId) {
+        case "topLeft":
+          this.start.imgX = imgCoords.imgX;
+          this.start.imgY = imgCoords.imgY;
+          break;
+        case "topRight":
+          this.end.imgX = imgCoords.imgX;
+          this.start.imgY = imgCoords.imgY;
+          break;
+        case "bottomLeft":
+          this.start.imgX = imgCoords.imgX;
+          this.end.imgY = imgCoords.imgY;
+          break;
+        case "bottomRight":
+          this.end.imgX = imgCoords.imgX;
+          this.end.imgY = imgCoords.imgY;
+          break;
       }
+    }
+
+    static drawGhostHandle(ctx, pt) {
+      const htheme = annotationTheme.line.handle;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(
+        pt.canvasX - htheme.size / 2,
+        pt.canvasY - htheme.size / 2,
+        htheme.size,
+        htheme.size
+      );
+      ctx.fillStyle = htheme.fill;
+      ctx.strokeStyle = htheme.stroke;
+      ctx.lineWidth = htheme.lineWidth;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     }
   }
 
-  class RectangleTool extends AnnotationTool {
+  AnnotationRegistry.register(
+    TcVnRectangle_DINT_Annotation.type,
+    TcVnRectangle_DINT_Annotation
+  );
+
+  class TcVnRectangle_DINT_Tool extends AnnotationTool {
     constructor(finishCallback) {
       super(finishCallback);
       this.start = null;
-    }
-    pointerDown(pos, imageCoords) {
-      this.start = { ...pos, ...imageCoords };
+      this.hover = null;
       this.activeAnnotation = null;
     }
-    pointerMove(pos, imageCoords) {
-      if (!this.start) return;
-      this.activeAnnotation = new RectangleAnnotation(this.start, {
-        ...pos,
-        ...imageCoords,
-      });
+
+    pointerDown(pos, imageCoords) {
+      this.start = { ...pos, ...imageCoords };
+      this.activeAnnotation = new TcVnRectangle_DINT_Annotation(
+        this.start,
+        this.start
+      );
+      this.hover = null;
     }
+
+    pointerMove(pos, imageCoords) {
+      if (!this.start || !this.activeAnnotation) return;
+      this.activeAnnotation.setEnd({ ...pos, ...imageCoords });
+    }
+
     pointerUp(pos, imageCoords) {
       if (this.start && this.activeAnnotation) {
+        this.activeAnnotation.setEnd({ ...pos, ...imageCoords });
         this.onFinish?.(this.activeAnnotation);
       }
       this.start = null;
       this.activeAnnotation = null;
+      this.hover = null;
+    }
+
+    setHover(pos, imageCoords) {
+      this.hover = { ...pos, ...imageCoords };
+    }
+
+    draw(ctx, opts) {
+      super.draw(ctx, opts);
+      if (!this.start && this.hover) {
+        TcVnRectangle_DINT_Annotation.drawGhostHandle(ctx, this.hover);
+      }
     }
   }
 
@@ -9767,7 +10323,8 @@
       imageData: "",
     };
 
-    constructor({ margin = 5, imageTopPadding = 1 } = {}) {
+    constructor(parentWidget, { margin = 5, imageTopPadding = 1 } = {}) {
+      this.parentWidget = parentWidget;
       this.margin = margin;
       this.imageTopPadding = imageTopPadding;
       this.displayImage = new Image();
@@ -9779,7 +10336,6 @@
       this.currentLoadId = 0;
       this.interaction = new CanvasInteractionManager();
       this.annotations = [];
-      this.activeAnnotation = null;
 
       this.interaction.setImageToCanvasFunc(
         this.imageCoordsToCanvasCoords.bind(this)
@@ -9791,9 +10347,7 @@
       // Wire ESC and contextmenu for cancel
       window.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
-          this.interaction.cancelCurrentAction();
-          this.activeAnnotation = null;
-          this.requestRedraw && this.requestRedraw();
+          this.interaction.cancelCurrentTool();
         }
       });
     }
@@ -9804,19 +10358,17 @@
 
     loadAnnotations(json) {
       const objs = JSON.parse(json);
-      const AnnotationTypes = {
-        point: PointAnnotation,
-        line: LineAnnotation,
-        rectangle: RectangleAnnotation,
-      };
       this.annotations = objs
         .map((obj) => {
-          const Ctor = AnnotationTypes[obj.type];
-          return Ctor ? Ctor.fromJSON(obj) : null;
+          const Ctor = AnnotationRegistry.get(obj.type);
+          if (!Ctor) {
+            console.warn(`Unknown annotation type: ${obj.type}`);
+            return null;
+          }
+          return Ctor.fromJSON(obj);
         })
         .filter(Boolean);
       this.interaction.setAnnotations(this.annotations);
-      this.requestRedraw && this.requestRedraw();
     }
 
     async setImageData(newValue) {
@@ -9857,6 +10409,7 @@
       this.cachedComponentSize = result;
       return result;
     }
+
     getMetaHeight() {
       return this.metaHeight || 0;
     }
@@ -9977,9 +10530,6 @@
           this.interaction.pointerUp({ canvasX, canvasY }, { imgX, imgY });
           break;
       }
-      // Get preview annotation (if any) from interaction:
-      this.activeAnnotation = this.interaction.activeAnnotation;
-      this.requestRedraw && this.requestRedraw();
     }
 
     onMouseOver(event, pos, parentNode, value) {
@@ -9989,7 +10539,9 @@
       if (this.isMouseInDrawArea(canvasX, canvasY)) {
         this.tooltipCoords = { imgX, imgY, canvasX, canvasY };
       }
+      this.interaction.pointerOver({ canvasX, canvasY }, { imgX, imgY });
     }
+
     draw(ctx, parentNode, availableWidth, startY, suggestedHeight, opts = {}) {
       const { placeholderText = "No image" } = opts;
 
@@ -10032,13 +10584,12 @@
           imageToCanvas: this.imageCoordsToCanvasCoords.bind(this),
         });
       }
-      // Draw preview annotation
-      if (this.activeAnnotation) {
-        this.activeAnnotation.draw(ctx, {
-          preview: true,
-          imageToCanvas: this.imageCoordsToCanvasCoords.bind(this),
-        });
-      }
+
+      // Draw interaction state (e.g. point being added)
+      this.interaction.draw(ctx, {
+        imageToCanvas: this.imageCoordsToCanvasCoords.bind(this),
+        canvasToImage: this.canvasCoordsToImageCoords.bind(this),
+      });
 
       // Draw meta info (below the image)
       UiVisionDraw.drawMetaInfoBox(
@@ -10077,6 +10628,28 @@
       const y = localMouse[1];
 
       if (!this.isMouseInDrawArea(x, y)) return null;
+
+      if (this.interaction.usingTool) {
+        return [
+          {
+            content: "Cancel",
+            callback: () => this.interaction.cancelCurrentTool(),
+          },
+        ];
+      }
+
+      const hitAnnotation = this.interaction.selectAnnotationAt({
+        canvasX: x,
+        canvasY: y,
+      });
+      if (hitAnnotation) {
+        return [
+          {
+            content: "🗑️ Delete",
+            callback: () => this.deleteAnnotation(hitAnnotation),
+          },
+        ];
+      }
 
       const pixelCoords = this.tooltipCoords;
       const pixel = pixelCoords
@@ -10125,22 +10698,26 @@
       });
 
       menu.push({
-        content: "Add Shapes",
+        content: "Add Node",
         has_submenu: true,
         submenu: {
-          title: "Add Shapes",
+          title: "Add Node",
           options: [
             {
-              content: "Add Point",
-              callback: () => this._startAddAnnotation("point"),
+              content: "Add Point as TcVnPoint2_REAL",
+              callback: () => this.startAddAnnotation(TcVnPoint2_REAL_Tool),
             },
             {
-              content: "Add Line",
-              callback: () => this._startAddAnnotation("line"),
+              content: "Add Point as TcVnPoint2_LREAL",
+              callback: () => this.startAddAnnotation(TcVnPoint2_LREAL_Tool),
             },
             {
-              content: "Add Rectangle",
-              callback: () => this._startAddAnnotation("rectangle"),
+              content: "Add Line as TcVnVector4_DINT",
+              callback: () => this.startAddAnnotation(TcVnVector4_DINT_Tool),
+            },
+            {
+              content: "Add Rectangle as TcVnRectangle_DINT",
+              callback: () => this.startAddAnnotation(TcVnRectangle_DINT_Tool),
             },
           ],
         },
@@ -10149,26 +10726,27 @@
       return menu;
     }
 
-    // annotation management
+    startAddAnnotation(ToolClass) {
+      if (!ToolClass) return;
 
-    _startAddAnnotation(type) {
-      let tool;
       const finish = (annotation) => {
         this.annotations.push(annotation);
         this.interaction.setAnnotations(this.annotations);
-        this.activeAnnotation = null;
-        this.requestRedraw && this.requestRedraw();
-        // After finishing, return to "null tool" (no drawing)
-        this.interaction.setTool(null);
+        this.parentWidget?.requestRedraw();
+        this.interaction.clearTool();
       };
-      if (type === "point") {
-        tool = new PointTool(finish);
-      } else if (type === "line") {
-        tool = new LineTool(finish);
-      } else if (type === "rectangle") {
-        tool = new RectangleTool(finish);
-      }
+
+      const tool = new ToolClass(finish);
       this.interaction.setTool(tool);
+    }
+
+    deleteAnnotation(annotation) {
+      const idx = this.annotations.indexOf(annotation);
+      if (idx !== -1) {
+        annotation.onDelete?.();
+        this.annotations.splice(idx, 1);
+        this.parentWidget?.requestRedraw();
+      }
     }
   }
 
@@ -10178,7 +10756,7 @@
     constructor(name, parent, options) {
       super(name, parent, options);
       this.label = "Image Display";
-      this.imageDisplay = new ImageDisplayComponent({});
+      this.imageDisplay = new ImageDisplayComponent(this, {});
       this.on("valueChanged", async (newValue, oldValue) => {
         await this.imageDisplay.setImageData(newValue);
       });
@@ -10224,7 +10802,7 @@
     constructor(name, property, parameter, content) {
       super(name, property, parameter, content);
       this.label = "Image Control";
-      this.imageDisplay = new ImageDisplayComponent({});
+      this.imageDisplay = new ImageDisplayComponent(this, {});
       this.droppedImageSize = ITcVnImageControlWidget.DEFAULT_SIZE;
 
       this.FILE_HANDLERS = {

@@ -426,4 +426,64 @@ export class UiVisionDraw {
 
     return text.slice(0, low - 1) + ellipsis;
   }
+
+  static drawDashedLine(
+    ctx,
+    x1,
+    y1,
+    x2,
+    y2,
+    foreground = "#FFF",
+    background = "#000",
+    dash = [3, 3],
+    width = 1
+  ) {
+    ctx.save();
+    ctx.strokeStyle = foreground;
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash);
+    ctx.lineDashOffset = 0;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = background;
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash);
+    ctx.lineDashOffset = dash[0];
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  static drawDashedRect(
+    ctx,
+    x,
+    y,
+    w,
+    h,
+    foreground = "#FFF",
+    background = "#000",
+    dash = [6, 6],
+    width = 0.5
+  ) {
+    ctx.save();
+    ctx.strokeStyle = foreground;
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash);
+    ctx.lineDashOffset = 0;
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = background;
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash);
+    ctx.lineDashOffset = dash[0];
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+  }
 }

@@ -11,4 +11,10 @@ export class AnnotationTool {
   cancel() {
     this.activeAnnotation = null;
   }
+
+  draw(ctx, opts) {
+    if (this.activeAnnotation) {
+      this.activeAnnotation.draw(ctx, { ...opts, preview: true });
+    }
+  }
 }
