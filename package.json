@@ -40,7 +40,7 @@
     "rollup-plugin-license": "^3.5.3"
   },
   "peerDependencies": {
-    "mobject-graph-ui": "^0.1.53"
+    "mobject-graph-ui": "^0.1.54"
   },
   "dependencies": {
     "@rollup/plugin-commonjs": "^28.0.2",

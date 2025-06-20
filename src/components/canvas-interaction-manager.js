@@ -6,6 +6,8 @@ export class CanvasInteractionManager {
     this.canvasToImage = null;
     this.imageToCanvas = null;
     this.annotations = [];
+    this.dragStart = null;
+    this.dragEnd = null;
   }
 
   setTool(toolInstance) {
@@ -105,6 +107,11 @@ export class CanvasInteractionManager {
       this.draggingHandle = null;
       for (const annotation of this.annotations) annotation.selected = false;
     }
+
+    if (found) return;
+
+    this.dragStart = { ...pos, ...imageCoords };
+    this.dragEnd = { ...pos, ...imageCoords };
   }
 
   pointerMove(pos, imageCoords) {
@@ -119,7 +126,10 @@ export class CanvasInteractionManager {
         imgX: imgCoords[0],
         imgY: imgCoords[1],
       });
+      return;
     }
+
+    this.dragEnd = { ...pos, ...imageCoords };
   }
 
   pointerUp(pos, imageCoords) {
@@ -128,6 +138,10 @@ export class CanvasInteractionManager {
       return;
     }
     this.draggingHandle = null;
+
+    this.dragEnd = { ...pos, ...imageCoords };
+    this.dragStart = null;
+    this.dragEnd = null;
   }
 
   get activeAnnotation() {

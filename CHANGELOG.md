@@ -3,6 +3,7 @@
 ## 0.1.15
 
 - added copy to right click menu on image display and control.
+- base code added for adding annotations
 
 ## 0.1.14
 

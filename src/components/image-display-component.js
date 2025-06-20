@@ -118,7 +118,7 @@ export class ImageDisplayComponent {
   }
 
   onConfigure(info) {
-    if (info.annotations) {
+    if (info?.annotations) {
       this.loadAnnotations(info.annotations);
     }
     this.linkAnnotationsToNodes();
@@ -358,7 +358,7 @@ export class ImageDisplayComponent {
 
     // Draw selection box if we are in select mode
     if (
-      this.interaction.mode === "select" &&
+      !this.interaction.usingTool &&
       this.interaction.dragStart &&
       this.interaction.dragEnd &&
       this.drawArea
@@ -453,33 +453,33 @@ export class ImageDisplayComponent {
       },
     });
 
-    menu.push({
-      content: "Add Node",
-      has_submenu: true,
-      submenu: {
-        title: "Add Node",
-        options: [
-          {
-            content: "Add Point as TcVnPoint2_REAL",
-            callback: () => this.startAddAnnotation(Point_TcVnPoint2_REAL_Tool),
-          },
-          {
-            content: "Add Point as TcVnPoint2_LREAL",
-            callback: () =>
-              this.startAddAnnotation(Point_TcVnPoint2_LREAL_Tool),
-          },
-          {
-            content: "Add Line as TcVnVector4_DINT",
-            callback: () => this.startAddAnnotation(Line_TcVnVector4_DINT_Tool),
-          },
-          {
-            content: "Add Rectangle as TcVnRectangle_DINT",
-            callback: () =>
-              this.startAddAnnotation(Rectangle_TcVnRectangle_DINT_Tool),
-          },
-        ],
-      },
-    });
+    // menu.push({
+    //   content: "Add Node",
+    //   has_submenu: true,
+    //   submenu: {
+    //     title: "Add Node",
+    //     options: [
+    //       {
+    //         content: "Add Point as TcVnPoint2_REAL",
+    //         callback: () => this.startAddAnnotation(Point_TcVnPoint2_REAL_Tool),
+    //       },
+    //       {
+    //         content: "Add Point as TcVnPoint2_LREAL",
+    //         callback: () =>
+    //           this.startAddAnnotation(Point_TcVnPoint2_LREAL_Tool),
+    //       },
+    //       {
+    //         content: "Add Line as TcVnVector4_DINT",
+    //         callback: () => this.startAddAnnotation(Line_TcVnVector4_DINT_Tool),
+    //       },
+    //       {
+    //         content: "Add Rectangle as TcVnRectangle_DINT",
+    //         callback: () =>
+    //           this.startAddAnnotation(Rectangle_TcVnRectangle_DINT_Tool),
+    //       },
+    //     ],
+    //   },
+    // });
 
     return menu;
   }

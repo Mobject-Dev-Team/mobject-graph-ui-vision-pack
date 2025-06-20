@@ -9302,6 +9302,8 @@
       this.canvasToImage = null;
       this.imageToCanvas = null;
       this.annotations = [];
+      this.dragStart = null;
+      this.dragEnd = null;
     }
 
     setTool(toolInstance) {
@@ -9401,6 +9403,11 @@
         this.draggingHandle = null;
         for (const annotation of this.annotations) annotation.selected = false;
       }
+
+      if (found) return;
+
+      this.dragStart = { ...pos, ...imageCoords };
+      this.dragEnd = { ...pos, ...imageCoords };
     }
 
     pointerMove(pos, imageCoords) {
@@ -9415,7 +9422,10 @@
           imgX: imgCoords[0],
           imgY: imgCoords[1],
         });
+        return;
       }
+
+      this.dragEnd = { ...pos, ...imageCoords };
     }
 
     pointerUp(pos, imageCoords) {
@@ -9424,6 +9434,10 @@
         return;
       }
       this.draggingHandle = null;
+
+      this.dragEnd = { ...pos, ...imageCoords };
+      this.dragStart = null;
+      this.dragEnd = null;
     }
 
     get activeAnnotation() {
@@ -9439,27 +9453,6 @@
     draw(ctx, opts) {
       if (this.currentTool && typeof this.currentTool.draw === "function") {
         this.currentTool.draw(ctx, { ...opts, preview: true });
-      }
-    }
-  }
-
-  class AnnotationTool {
-    constructor(finishCallback) {
-      this.onFinish = finishCallback;
-      this.activeAnnotation = null;
-    }
-
-    pointerDown(pos, imageCoords, button = 0) {}
-    pointerMove(pos, imageCoords) {}
-    pointerUp(pos, imageCoords) {}
-
-    cancel() {
-      this.activeAnnotation = null;
-    }
-
-    draw(ctx, opts) {
-      if (this.activeAnnotation) {
-        this.activeAnnotation.draw(ctx, { ...opts, preview: true });
       }
     }
   }
@@ -9675,33 +9668,6 @@
     Point_TcVnPoint2_REAL_Annotation
   );
 
-  class Point_TcVnPoint2_REAL_Tool extends AnnotationTool {
-    constructor(finishCallback) {
-      super(finishCallback);
-      this.hover = null;
-    }
-
-    pointerDown(pos, imageCoords) {
-      const annotation = new Point_TcVnPoint2_REAL_Annotation({
-        ...pos,
-        ...imageCoords,
-      });
-      this.onFinish?.(annotation);
-      this.hover = null;
-    }
-
-    setHover(pos, imageCoords) {
-      this.hover = { ...pos, ...imageCoords };
-    }
-
-    draw(ctx, opts) {
-      super.draw(ctx, opts);
-      if (this.hover) {
-        Point_TcVnPoint2_REAL_Annotation.drawGhostHandle(ctx, this.hover);
-      }
-    }
-  }
-
   class Point_TcVnPoint2_LREAL_Annotation extends Annotation {
     static type = "(point)TcVnPoint2_LREAL";
 
@@ -9824,33 +9790,6 @@
     Point_TcVnPoint2_LREAL_Annotation.type,
     Point_TcVnPoint2_LREAL_Annotation
   );
-
-  class Point_TcVnPoint2_LREAL_Tool extends AnnotationTool {
-    constructor(finishCallback) {
-      super(finishCallback);
-      this.hover = null;
-    }
-
-    pointerDown(pos, imageCoords) {
-      const annotation = new Point_TcVnPoint2_LREAL_Annotation({
-        ...pos,
-        ...imageCoords,
-      });
-      this.onFinish?.(annotation);
-      this.hover = null;
-    }
-
-    setHover(pos, imageCoords) {
-      this.hover = { ...pos, ...imageCoords };
-    }
-
-    draw(ctx, opts) {
-      super.draw(ctx, opts);
-      if (this.hover) {
-        Point_TcVnPoint2_LREAL_Annotation.drawGhostHandle(ctx, this.hover);
-      }
-    }
-  }
 
   class Line_TcVnVector4_DINT_Annotation extends Annotation {
     static type = "TcVnVector4_DINT";
@@ -10015,48 +9954,6 @@
     Line_TcVnVector4_DINT_Annotation.type,
     Line_TcVnVector4_DINT_Annotation
   );
-
-  class Line_TcVnVector4_DINT_Tool extends AnnotationTool {
-    constructor(finishCallback) {
-      super(finishCallback);
-      this.start = null;
-      this.hover = null;
-      this.activeAnnotation = null;
-    }
-
-    pointerDown(pos, imageCoords) {
-      this.start = { ...pos, ...imageCoords };
-      this.activeAnnotation = new Line_TcVnVector4_DINT_Annotation(
-        this.start,
-        this.start
-      );
-    }
-
-    pointerMove(pos, imageCoords) {
-      if (!this.start || !this.activeAnnotation) return;
-      this.activeAnnotation.setEnd({ ...pos, ...imageCoords });
-    }
-
-    pointerUp(pos, imageCoords) {
-      if (this.start && this.activeAnnotation) {
-        this.activeAnnotation.setEnd({ ...pos, ...imageCoords });
-        this.onFinish?.(this.activeAnnotation);
-      }
-      this.start = null;
-      this.activeAnnotation = null;
-    }
-
-    setHover(pos, imageCoords) {
-      this.hover = { ...pos, ...imageCoords };
-    }
-
-    draw(ctx, opts) {
-      super.draw(ctx, opts);
-      if (!this.start && this.hover) {
-        Line_TcVnVector4_DINT_Annotation.drawGhostHandle(ctx, this.hover);
-      }
-    }
-  }
 
   function pointInRect(pos, a, b) {
     const x = Math.min(a.canvasX, b.canvasX);
@@ -10259,50 +10156,6 @@
     Rectangle_TcVnRectangle_DINT_Annotation
   );
 
-  class Rectangle_TcVnRectangle_DINT_Tool extends AnnotationTool {
-    constructor(finishCallback) {
-      super(finishCallback);
-      this.start = null;
-      this.hover = null;
-      this.activeAnnotation = null;
-    }
-
-    pointerDown(pos, imageCoords) {
-      this.start = { ...pos, ...imageCoords };
-      this.activeAnnotation = new Rectangle_TcVnRectangle_DINT_Annotation(
-        this.start,
-        this.start
-      );
-      this.hover = null;
-    }
-
-    pointerMove(pos, imageCoords) {
-      if (!this.start || !this.activeAnnotation) return;
-      this.activeAnnotation.setEnd({ ...pos, ...imageCoords });
-    }
-
-    pointerUp(pos, imageCoords) {
-      if (this.start && this.activeAnnotation) {
-        this.activeAnnotation.setEnd({ ...pos, ...imageCoords });
-        this.onFinish?.(this.activeAnnotation);
-      }
-      this.start = null;
-      this.activeAnnotation = null;
-      this.hover = null;
-    }
-
-    setHover(pos, imageCoords) {
-      this.hover = { ...pos, ...imageCoords };
-    }
-
-    draw(ctx, opts) {
-      super.draw(ctx, opts);
-      if (!this.start && this.hover) {
-        Rectangle_TcVnRectangle_DINT_Annotation.drawGhostHandle(ctx, this.hover);
-      }
-    }
-  }
-
   class ImageDisplayComponent {
     static DEFAULT_IMAGE_DATA = {
       imageInfo: {
@@ -10411,7 +10264,7 @@
     }
 
     onConfigure(info) {
-      if (info.annotations) {
+      if (info?.annotations) {
         this.loadAnnotations(info.annotations);
       }
       this.linkAnnotationsToNodes();
@@ -10651,7 +10504,7 @@
 
       // Draw selection box if we are in select mode
       if (
-        this.interaction.mode === "select" &&
+        !this.interaction.usingTool &&
         this.interaction.dragStart &&
         this.interaction.dragEnd &&
         this.drawArea
@@ -10746,33 +10599,33 @@
         },
       });
 
-      menu.push({
-        content: "Add Node",
-        has_submenu: true,
-        submenu: {
-          title: "Add Node",
-          options: [
-            {
-              content: "Add Point as TcVnPoint2_REAL",
-              callback: () => this.startAddAnnotation(Point_TcVnPoint2_REAL_Tool),
-            },
-            {
-              content: "Add Point as TcVnPoint2_LREAL",
-              callback: () =>
-                this.startAddAnnotation(Point_TcVnPoint2_LREAL_Tool),
-            },
-            {
-              content: "Add Line as TcVnVector4_DINT",
-              callback: () => this.startAddAnnotation(Line_TcVnVector4_DINT_Tool),
-            },
-            {
-              content: "Add Rectangle as TcVnRectangle_DINT",
-              callback: () =>
-                this.startAddAnnotation(Rectangle_TcVnRectangle_DINT_Tool),
-            },
-          ],
-        },
-      });
+      // menu.push({
+      //   content: "Add Node",
+      //   has_submenu: true,
+      //   submenu: {
+      //     title: "Add Node",
+      //     options: [
+      //       {
+      //         content: "Add Point as TcVnPoint2_REAL",
+      //         callback: () => this.startAddAnnotation(Point_TcVnPoint2_REAL_Tool),
+      //       },
+      //       {
+      //         content: "Add Point as TcVnPoint2_LREAL",
+      //         callback: () =>
+      //           this.startAddAnnotation(Point_TcVnPoint2_LREAL_Tool),
+      //       },
+      //       {
+      //         content: "Add Line as TcVnVector4_DINT",
+      //         callback: () => this.startAddAnnotation(Line_TcVnVector4_DINT_Tool),
+      //       },
+      //       {
+      //         content: "Add Rectangle as TcVnRectangle_DINT",
+      //         callback: () =>
+      //           this.startAddAnnotation(Rectangle_TcVnRectangle_DINT_Tool),
+      //       },
+      //     ],
+      //   },
+      // });
 
       return menu;
     }
